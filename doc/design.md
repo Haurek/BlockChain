@@ -21,8 +21,9 @@
 
 ### 共识机制
 
-- PBFT--拜占庭问题
-- PoW
+PBFT--拜占庭问题
+
+PoW
 
 
 
@@ -43,7 +44,7 @@
 
 区块体：
 
-- 数据(交易)
+- Transactions
 
 
 
@@ -61,7 +62,7 @@ ECDSA
 
 非对称加密
 
-数字签名
+数字签名和验证
 
 
 
@@ -71,7 +72,9 @@ ECDSA
 
 **钱包**
 
-钱包只是一个密钥对，保存公钥和私钥
+钱包只是一个密钥对，保存公钥和私钥，一个地址对应一个钱包
+
+Wallet包中包含交易的签名和认证
 
 
 
@@ -81,15 +84,41 @@ ECDSA
 
 UTXO输出：
 
-- value
-- 公钥hash
+- index：在一个Transaction中的序号
+
+- value：包含的价值
+- 输出地址
 
 UTXO输入：
 
-- id
-- 第几个输出
+- index：在一个Transaction中的序号
 - 签名
 - 公钥
+- 输入地址
+
+- ID：所属的Transaction对应的ID，可用于区块链上查找所属的区块
+
+公钥和地址确保公钥的完整性，因为地址由公钥生成
+
+签名和公钥验证输入属于发送方
+
+发送方查找区块链中所有Transaction，找到其中未花费
+
+Transaction：
+
+- ID：交易的hash摘要
+- Inputs：所有输入
+- Outputs：所有输出
+
+// TODO
+
+每个节点在本地维护区块链中的UTXO(未花费输出集合)，==数据库中加一张表？==
+
+Option:
+
+6次确定，解决双花问题
+
+
 
 **coinbase**：只有输出没有输入，用于创世区块发行货币以及矿工挖矿奖励
 
@@ -106,6 +135,8 @@ reward是矿工挖矿的奖励，是coinbase类型，只有一个输出，其中
 Hashcush：
 
 SHA256(data+counter)值前n个是0，n是挖矿难度，counter从0开始递增
+
+矿工节点维护一个mempool，保存从P2P网络中接收的Transactions，从中获取Transactions并打包成区块
 
 
 

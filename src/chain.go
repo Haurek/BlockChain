@@ -1,14 +1,7 @@
-// Package chain
-package chain
-
-import (
-	"BlockChain/src/UTXO"
-	"BlockChain/src/Wallet"
-	"BlockChain/src/block"
-)
+package BlockChain
 
 type Chain struct {
-	blocks []*block.Block
+	blocks []*Block
 }
 
 // CreateChain create a new chain
@@ -18,19 +11,19 @@ func (chain *Chain) CreateChain() *Chain {
 }
 
 // AddBlock add a block to chain
-func (chain *Chain) AddBlock(block *block.Block) bool {
+func (chain *Chain) AddBlock(block *Block) bool {
 	// TODO
 	return true
 }
 
 // FindEnoughUnspentOutput search unspent output on the chain
-func FindEnoughUnspentOutput(wallet *Wallet.Wallet) (balance int, outputs []*UTXO.TXoutput) {
+func FindEnoughUnspentOutput(wallet *Wallet) (balance int, outputs []*TXoutput) {
 	// TODO
 	return 0, nil
 }
 
 // GetPreTransaction search a UTXO input previous transaction on the chain
-func GetPreTransaction(input *UTXO.TXinput) *UTXO.Transaction {
+func GetPreTransaction(input *TXinput) *Transaction {
 	// TODO
 	return nil
 }

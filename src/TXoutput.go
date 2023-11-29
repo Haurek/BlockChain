@@ -1,4 +1,4 @@
-package UTXO
+package BlockChain
 
 // TXoutput is UTXO output type
 type TXoutput struct {

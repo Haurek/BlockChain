@@ -1,8 +1,6 @@
-// Package Wallet
-package Wallet
+package BlockChain
 
 import (
-	"BlockChain/src/base58"
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -96,7 +94,7 @@ func GenerateAddress(publicKeyBytes []byte) []byte {
 	Hash := append(versionHash, checksum...)
 
 	// base58 encode the hash value
-	return base58.Base58Encode(Hash)
+	return Base58Encode(Hash)
 }
 
 // Sign message use Wallet.PrivateKey
@@ -138,7 +136,7 @@ func Verify(publicKey []byte, message []byte, signature []byte) bool {
 
 // CheckAddress check checksum of an address
 func CheckAddress(addr []byte) bool {
-	publickHash := base58.Base58Decode(addr)
+	publickHash := Base58Decode(addr)
 	// last 4 byte is checksum
 	addr_checksum := publickHash[len(publickHash)-4:]
 
