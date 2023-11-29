@@ -9,16 +9,27 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"math/big"
+
 	//"goland.org/x/crypto/ripemd160"
 	"goland/x/crypto/ripemd160"
-	"math/big"
 )
 
 // Wallet type
 type Wallet struct {
-	address    []byte // base58-like from public key
+	Address    []byte // base58-like from public key
 	PrivateKey *ecdsa.PrivateKey
-	PublicKey  *ecdsa.PublicKey
+	PublicKey  []byte
+}
+
+// GetAddress return wallet address
+func (wallet *Wallet) GetAddress() []byte {
+	return wallet.Address
+}
+
+// GetPublicKey return wallet public key
+func (wallet *Wallet) GetPublicKey() []byte {
+	return wallet.PublicKey
 }
 
 // NewWallet create a new wallet
@@ -29,8 +40,7 @@ func (wallet *Wallet) NewWallet() *Wallet {
 		fmt.Println("Error generating key pair:", err)
 	}
 
-	// generate address
-	wallet.generateAddress()
+	wallet.Address = GenerateAddress(wallet.PublicKey)
 
 	return wallet
 }
@@ -49,16 +59,13 @@ func (wallet *Wallet) generateKeyPair() error {
 	publicKey := &privateKey.PublicKey
 
 	wallet.PrivateKey = privateKey
-	wallet.PublicKey = publicKey
+	wallet.PublicKey = elliptic.MarshalCompressed(publicKey.Curve, publicKey.X, publicKey.Y)
 	return nil
 }
 
-// generateAddress generate address from public key to base58-like array
+// GenerateAddress generate address from public key to base58-like array
 // refer to BTC address generation
-func (wallet *Wallet) generateAddress() []byte {
-	// serialize public key
-	publicKeyBytes := elliptic.Marshal(wallet.PublicKey.Curve, wallet.PublicKey.X, wallet.PublicKey.Y)
-
+func GenerateAddress(publicKeyBytes []byte) []byte {
 	// generate public key sha256 hash
 	hash := sha256.New()
 	hash.Write(publicKeyBytes)
@@ -78,29 +85,14 @@ func (wallet *Wallet) generateAddress() []byte {
 	Hash := append(versionHash, checksum...)
 
 	// base58 encode the hash value
-	wallet.address = base58.Base58Encode(Hash)
-	return wallet.address
+	return base58.Base58Encode(Hash)
 }
 
-// CheckAddress check checksum of an address
-func (wallet *Wallet) CheckAddress(addr string) bool {
-	publickHash := base58.Base58Decode([]byte(addr))
-	// last 4 byte is checksum
-	addr_checksum := publickHash[len(publickHash)-4:]
-
-	version := publickHash[0]
-	publickHash = publickHash[1 : len(publickHash)-4]
-
-	// calculate
-	checksum := calculateChecksum(append([]byte{version}, publickHash...))
-
-	return bytes.Compare(addr_checksum, checksum) == 0
-}
-
-// Sign a message
+// Sign message use Wallet.PrivateKey
 func (wallet *Wallet) Sign(message []byte) ([]byte, error) {
 	hash := sha256.Sum256(message)
 
+	// sign
 	r, s, err := ecdsa.Sign(rand.Reader, wallet.PrivateKey, hash[:])
 	if err != nil {
 		return nil, err
@@ -114,17 +106,38 @@ func (wallet *Wallet) Sign(message []byte) ([]byte, error) {
 	return signature, nil
 }
 
-// Verify a message
+// Verify message use Wallet.PublicKey
 func (wallet *Wallet) Verify(message []byte, signature []byte) bool {
 	hash := sha256.Sum256(message)
 
+	// get public key
+	x, y := elliptic.UnmarshalCompressed(elliptic.P256(), wallet.PublicKey)
+	key := ecdsa.PublicKey{elliptic.P256(), x, y}
+
+	// get signature
 	rBytes := signature[:len(signature)/2]
 	sBytes := signature[len(signature)/2:]
 	var r, s big.Int
 	r.SetBytes(rBytes)
 	s.SetBytes(sBytes)
 
-	return ecdsa.Verify(wallet.PublicKey, hash[:], &r, &s)
+	// verify
+	return ecdsa.Verify(&key, hash[:], &r, &s)
+}
+
+// CheckAddress check checksum of an address
+func CheckAddress(addr []byte) bool {
+	publickHash := base58.Base58Decode(addr)
+	// last 4 byte is checksum
+	addr_checksum := publickHash[len(publickHash)-4:]
+
+	version := publickHash[0]
+	publickHash = publickHash[1 : len(publickHash)-4]
+
+	// calculate
+	checksum := calculateChecksum(append([]byte{version}, publickHash...))
+
+	return bytes.Compare(addr_checksum, checksum) == 0
 }
 
 // calculateChecksum calculate checksum for address generate
