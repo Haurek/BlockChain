@@ -14,11 +14,12 @@ type TXinput struct {
 	PublicKey []byte
 }
 
-// NewTXinput create new UTXO niput
+// NewTXinput create new UTXO input
 func (input *TXinput) NewTXinput(index int, value int, wallet *Wallet.Wallet) *TXinput {
 	input.Index = index
 	input.Value = value
 	input.Address = wallet.Address
+	input.PublicKey = wallet.PublicKey
 	return input
 }
 

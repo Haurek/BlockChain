@@ -2,16 +2,15 @@ package UTXO
 
 import (
 	"BlockChain/src/Wallet"
-	"crypto/ecdsa"
 	"crypto/sha256"
 	"fmt"
 )
 
 // Transaction include inputs and outputs
 type Transaction struct {
-	ID     []byte
-	Inputs []TXinput
-	Output []TXoutput
+	ID     [32]byte
+	Inputs []*TXinput
+	Output []*TXoutput
 }
 
 func (Tx *Transaction) NewTransaction(wallet *Wallet.Wallet, to []byte, amount int) *Transaction {
@@ -19,51 +18,69 @@ func (Tx *Transaction) NewTransaction(wallet *Wallet.Wallet, to []byte, amount i
 	// maybe search from database
 	// TODO
 	//balance, walletOutputs := FindEnoughUnspentOutput()
-	balance := 0
-	walletOutputs := make([]TXoutput, 2)
 	if balance < amount {
 		fmt.Println("Not enough balance")
 		return nil
 	}
 
 	// build inputs
-	var inputs []TXinput
+	var inputs []*TXinput
 	for i, out := range walletOutputs {
 		input := &TXinput{}
 		input.NewTXinput(i, out.Value, wallet)
-		inputs = append(inputs, *input)
+		inputs = append(inputs, input)
 	}
+	// sign inputs
+	Tx.Inputs = inputs
+	Tx.SignTransaction(wallet)
 
 	// build outputs
-	var outputs []TXoutput
+	var outputs []*TXoutput
 	output := &TXoutput{}
 	output.NewTXoutput(0, amount, to)
-	outputs = append(outputs, *output)
+	outputs = append(outputs, output)
 	// charge
 	if balance > amount {
 		charge := &TXoutput{}
 		charge.NewTXoutput(1, balance-amount, wallet.Address)
-		outputs = append(outputs, *charge)
+		outputs = append(outputs, charge)
 	}
-
-	// sign inputs
-	Tx.SignTransaction(wallet.PrivateKey)
-
-	// generate Transaction hash
-	Tx.ID = Tx.Hash()
-	Tx.Inputs = inputs
 	Tx.Output = outputs
+
+	// generate Transaction hash as ID
+	Tx.ID = Tx.Hash()
 	return Tx
 }
 
 // SignTransaction sign each input of transaction
-func (Tx *Transaction) SignTransaction(privateKey *ecdsa.PrivateKey) {
-	// TODO
+func (Tx *Transaction) SignTransaction(wallet *Wallet.Wallet) {
+	for i, input := range Tx.Inputs {
+		// get previous transaction of a input
+		// maybe get from chain(database)
+		// TODO
+		//preTx := GetPreTransaction(input)
+		message := preTx.Serialize()
+		signature, err := wallet.Sign(message)
+		if err != nil {
+			fmt.Println("fail to generate signature")
+		}
+		Tx.Inputs[i].Signature = signature
+	}
+
 }
 
-// VerifyTransaction verify each output of transaction
-func (Tx *Transaction) VerifyTransaction(wallet *Wallet.Wallet) {
-	// TODO
+// VerifyTransaction verify each input of transaction
+func (Tx *Transaction) VerifyTransaction(publicKey []byte) bool {
+	for _, input := range Tx.Inputs {
+		signature := input.Signature
+		// TODO
+		//preTx := GetPreTransaction(input)
+		message := preTx.Serialize()
+		if Wallet.Verify(publicKey, message, signature) == false {
+			return false
+		}
+	}
+	return true
 }
 
 // Hash generate Transaction hash
@@ -77,9 +94,11 @@ func (Tx *Transaction) Hash() [32]byte {
 // Serialize Transaction struct
 func (Tx *Transaction) Serialize() []byte {
 	// TODO
+	return nil
 }
 
 // Deserialize []byte data to Transaction type
 func (Tx *Transaction) Deserialize(raw []byte) *Transaction {
 	// TODO
+	return nil
 }

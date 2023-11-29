@@ -22,15 +22,15 @@ type Wallet struct {
 	PublicKey  []byte
 }
 
-// GetAddress return wallet address
-func (wallet *Wallet) GetAddress() []byte {
-	return wallet.Address
-}
-
-// GetPublicKey return wallet public key
-func (wallet *Wallet) GetPublicKey() []byte {
-	return wallet.PublicKey
-}
+//// GetAddress return wallet address
+//func (wallet *Wallet) GetAddress() []byte {
+//	return wallet.Address
+//}
+//
+//// GetPublicKey return wallet public key
+//func (wallet *Wallet) GetPublicKey() []byte {
+//	return wallet.PublicKey
+//}
 
 // NewWallet create a new wallet
 func (wallet *Wallet) NewWallet() *Wallet {
@@ -43,6 +43,17 @@ func (wallet *Wallet) NewWallet() *Wallet {
 	wallet.Address = GenerateAddress(wallet.PublicKey)
 
 	return wallet
+}
+
+// LoadWallet Load key pair as wallet from local file
+func (wallet *Wallet) LoadWallet(path string) *Wallet {
+	// TODO
+	return nil
+}
+
+// saveKeyPair save key pair in file
+func (wallet *Wallet) saveKeyPair() {
+	// TODO
 }
 
 // generateKeyPair generate ecdsa key pair
@@ -106,12 +117,12 @@ func (wallet *Wallet) Sign(message []byte) ([]byte, error) {
 	return signature, nil
 }
 
-// Verify message use Wallet.PublicKey
-func (wallet *Wallet) Verify(message []byte, signature []byte) bool {
+// Verify signature
+func Verify(publicKey []byte, message []byte, signature []byte) bool {
 	hash := sha256.Sum256(message)
 
 	// get public key
-	x, y := elliptic.UnmarshalCompressed(elliptic.P256(), wallet.PublicKey)
+	x, y := elliptic.UnmarshalCompressed(elliptic.P256(), publicKey)
 	key := ecdsa.PublicKey{elliptic.P256(), x, y}
 
 	// get signature
