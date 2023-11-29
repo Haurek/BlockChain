@@ -40,7 +40,7 @@ func SerializeHeader(header *BlockHeader) []byte {
 	data := bytes.Join(
 		[][]byte{
 			header.PrevHash,
-			header.MerkelRoot,
+			header.MerkleRoot,
 			int2Bytes(int64(header.Timestamp)),
 			int2Bytes(int64(header.Bits)),
 		},

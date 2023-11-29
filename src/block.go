@@ -21,7 +21,7 @@ type BlockHeader struct {
 	PrevHash   []byte
 	Nonce      int64
 	Bits       int
-	MerkelRoot []byte
+	MerkleRoot []byte
 }
 
 // NewBlock create a new block
@@ -29,23 +29,28 @@ func (block *Block) NewBlock(preHash []byte, Txs []*Transaction) *Block {
 	header := &BlockHeader{}
 	header.Timestamp = time.Now().Unix()
 	header.PrevHash = preHash
-	header.Bits = 8 // default
+	header.Bits = 1 // test
 
 	// merkel tree root get from merkel util
-	var TxHashs [][]byte
+	var TxsBytes [][]byte
 	for _, Tx := range Txs {
-		hash := Tx.Hash()
-		TxHashs = append(TxHashs, hash)
+		TxBytes, err := Tx.Serialize()
+		if err != nil {
+			fmt.Println("Error during serialization:", err)
+			return nil
+		}
+		TxsBytes = append(TxsBytes, TxBytes)
 	}
-	merkerTree := &MerkelTree{}
-	merkerTree.NewMerkelTree(TxHashs)
-	header.MerkelRoot = merkerTree.Root.Hash
+	merkerTree := &MerkleTree{}
+	merkerTree.NewMerkleTree(TxsBytes)
+	header.MerkleRoot = merkerTree.Root.Hash
 
 	// hash and nonce get from pow util
 	header.Nonce, header.Hash = Mining(header)
 
 	block.Header = header
 	block.Transactions = Txs
+	block.TransactionCounter = len(Txs)
 	return block
 }
 

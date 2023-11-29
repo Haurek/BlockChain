@@ -1,14 +1,17 @@
 package BlockChain
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/gob"
+	"fmt"
 )
 
 // Transaction include inputs and outputs
 type Transaction struct {
-	ID     [32]byte
-	Inputs []*TXinput
-	Output []*TXoutput
+	ID     []byte
+	Inputs []TXinput
+	Output []TXoutput
 }
 
 //func (Tx *Transaction) NewTransaction(wallet *Wallet, to []byte, amount int) *Transaction {
@@ -92,20 +95,38 @@ type Transaction struct {
 
 // Hash generate Transaction hash
 func (Tx *Transaction) Hash() []byte {
-	raw := Tx.Serialize()
+	raw, err := Tx.Serialize()
+	if err != nil {
+		fmt.Println("Error during serialization:", err)
+		return nil
+	}
 	var hash [32]byte
 	hash = sha256.Sum256(raw)
 	return hash[:]
 }
 
 // Serialize Transaction struct
-func (Tx *Transaction) Serialize() []byte {
-	// TODO
-	return nil
+func (Tx *Transaction) Serialize() ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+
+	err := encoder.Encode(Tx)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 // Deserialize []byte data to Transaction type
-func (Tx *Transaction) Deserialize(raw []byte) *Transaction {
-	// TODO
-	return nil
+func (Tx *Transaction) Deserialize(raw []byte) (*Transaction, error) {
+	buf := bytes.NewBuffer(raw)
+	decoder := gob.NewDecoder(buf)
+
+	err := decoder.Decode(Tx)
+	if err != nil {
+		return nil, err
+	}
+
+	return Tx, nil
 }
