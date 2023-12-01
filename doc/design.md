@@ -29,18 +29,26 @@ PoW
 
 ### 节点和链数据结构
 
-**block**
+**blockNode**
 
-区块头：
+~~~Go
+type blockNode struct {
+	parent *blockNode
+	hash []byte
+	height int32
+    
+	// header
+	version    int32
+	bits       uint32
+	nonce      uint32
+	timestamp  int64
+	merkleRoot []byte
 
-- 时间戳
-- 前一个块的hash
-- 当前块hash
-- nonce(验证PoW)
-- Merkel tree root 
-- height区块高度
-- target_bits挖矿难度
-- transaction_count包含交易个数
+	status blockStatus
+}
+~~~
+
+
 
 区块体：
 

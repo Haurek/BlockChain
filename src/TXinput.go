@@ -1,31 +1,33 @@
 package BlockChain
 
-import (
-	"bytes"
-)
+import "bytes"
 
-// TXinput is UTXO input type
+// TXinput is transaction input type
 type TXinput struct {
-	//ID 			[]byte // maybe use for search previous Tx
-	Index     int
-	Value     int
-	Address   []byte
-	Signature []byte
-	PublicKey []byte
+	TxID           []byte
+	Value          int
+	FromAddress    []byte
+	Signature      []byte
+	PublicKeyBytes []byte
 }
 
-// NewTXinput create new UTXO input
-func (input *TXinput) NewTXinput(index int, value int, wallet *Wallet) *TXinput {
-	input.Index = index
-	input.Value = value
-	input.Address = wallet.Address
-	input.PublicKey = wallet.PublicKey
+// NewTXinput create new transaction input
+func NewTXinput(value int, from, id, pubKey []byte) *TXinput {
+	input := &TXinput{
+		TxID:           id,
+		Value:          value,
+		FromAddress:    from,
+		Signature:      nil,
+		PublicKeyBytes: pubKey,
+	}
 	return input
 }
 
-// CheckAddress verify address and public key
-func (input *TXinput) CheckAddress(addr []byte) bool {
-	pub2addr := GenerateAddress(input.PublicKey)
+func (input *TXinput) SetSignature(sig []byte) {
+	input.Signature = sig
+}
 
-	return bytes.Compare(addr, pub2addr) == 0
+// CanUnlock return an output key hash equal input key hash
+func (input *TXinput) CanUnlock(KeyHash []byte) bool {
+	return bytes.Equal(KeyHash, Address2PublicKeyHash(input.FromAddress))
 }

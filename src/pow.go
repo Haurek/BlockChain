@@ -2,8 +2,6 @@ package BlockChain
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/binary"
 	"math"
 	"math/big"
 )
@@ -15,14 +13,14 @@ func Mining(header *BlockHeader) (int64, []byte) {
 	target.Lsh(target, uint(256-header.Bits))
 
 	var nonce int64
-	var hash [32]byte
+	var hash []byte
 	nonce = 0
 	for nonce < math.MaxInt64 {
 		data := append(headerBytes, byte(nonce))
 		// hash twice
-		hash = sha256.Sum256(data)
-		hash = sha256.Sum256(hash[:])
-		hashInt.SetBytes(hash[:])
+		hash = Sha256Hash(data)
+		hash = Sha256Hash(hash)
+		hashInt.SetBytes(hash)
 		if hashInt.Cmp(target) == -1 {
 			break
 		} else {
@@ -36,23 +34,25 @@ func Mining(header *BlockHeader) (int64, []byte) {
 	}
 }
 
+// Proof check hash
+func Proof(header *BlockHeader) bool {
+	headerBytes := SerializeHeader(header)
+	nonce := byte(header.Nonce)
+	headerBytes = append(headerBytes, nonce)
+	hash := Sha256Hash(headerBytes)
+	hash = Sha256Hash(hash[:])
+	return bytes.Equal(hash[:], header.Hash)
+}
+
 func SerializeHeader(header *BlockHeader) []byte {
 	data := bytes.Join(
 		[][]byte{
 			header.PrevHash,
 			header.MerkleRoot,
-			int2Bytes(int64(header.Timestamp)),
-			int2Bytes(int64(header.Bits)),
+			Int2Bytes(int64(header.Timestamp)),
+			Int2Bytes(int64(header.Bits)),
 		},
 		[]byte{},
 	)
 	return data
-}
-
-func int2Bytes(value int64) []byte {
-	buffer := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutVarint(buffer, value)
-	Bytes := make([]byte, n)
-	copy(Bytes, buffer[:n])
-	return Bytes
 }

@@ -33,7 +33,7 @@ func createTableBlocks() error {
 			id INT  PRIMARY KEY UNIQUE,
 			Hash VARCHAR(64) NOT NULL,
 			TimeStamp VARCHAR(20) NOT NULL,
-			PrevHash VARCHAR(64) 
+			PrevHash VARCHAR(64)
 		)
 	`
 

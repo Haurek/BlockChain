@@ -25,13 +25,14 @@ type BlockHeader struct {
 }
 
 // NewBlock create a new block
-func (block *Block) NewBlock(preHash []byte, Txs []*Transaction) *Block {
+func NewBlock(preHash []byte, Txs []*Transaction) *Block {
+	// create header
 	header := &BlockHeader{}
 	header.Timestamp = time.Now().Unix()
 	header.PrevHash = preHash
-	header.Bits = 1 // test
+	header.Bits = Difficulty
 
-	// merkel tree root get from merkel util
+	// Serialize Transactions
 	var TxsBytes [][]byte
 	for _, Tx := range Txs {
 		TxBytes, err := Tx.Serialize()
@@ -41,17 +42,24 @@ func (block *Block) NewBlock(preHash []byte, Txs []*Transaction) *Block {
 		}
 		TxsBytes = append(TxsBytes, TxBytes)
 	}
-	merkerTree := &MerkleTree{}
-	merkerTree.NewMerkleTree(TxsBytes)
-	header.MerkleRoot = merkerTree.Root.Hash
+	// generate merkle tree
+	merkleTree := NewMerkleTree(TxsBytes)
+	header.MerkleRoot = merkleTree.Root.Hash
 
 	// hash and nonce get from pow util
 	header.Nonce, header.Hash = Mining(header)
 
-	block.Header = header
-	block.Transactions = Txs
-	block.TransactionCounter = len(Txs)
+	block := &Block{
+		Header:             header,
+		Transactions:       Txs,
+		TransactionCounter: len(Txs),
+	}
 	return block
+}
+
+// NewGenesisBlock create a genesis block
+func NewGenesisBlock(coinBase *Transaction) *Block {
+	return NewBlock([]byte("a Genesis Block"), []*Transaction{coinBase})
 }
 
 // Serialize Block struct
@@ -60,8 +68,8 @@ func (block *Block) Serialize() []byte {
 	return nil
 }
 
-// Deserialize []byte data to Block type
-func (block *Block) Deserialize(raw []byte) *Block {
+// DeserializeBlock []byte data to Block type
+func DeserializeBlock(raw []byte) *Block {
 	// TODO
 	return nil
 }
@@ -79,13 +87,14 @@ func (header *BlockHeader) Serialize() []byte {
 	return buf.Bytes()
 }
 
-// Deserialize []byte data to BlockHeader type
-func (header *BlockHeader) Deserialize(raw []byte) *BlockHeader {
+// DeserializeBlockHeader []byte data to BlockHeader type
+func DeserializeBlockHeader(raw []byte) *BlockHeader {
+	var header BlockHeader
 	decoder := gob.NewDecoder(bytes.NewReader(raw))
-	err := decoder.Decode(&header)
+	err := decoder.Decode(header)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return nil
 	}
-	return header
+	return &header
 }

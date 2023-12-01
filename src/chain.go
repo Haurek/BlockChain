@@ -16,14 +16,14 @@ func (chain *Chain) AddBlock(block *Block) bool {
 	return true
 }
 
-// FindEnoughUnspentOutput search unspent output on the chain
-func FindEnoughUnspentOutput(wallet *Wallet) (balance int, outputs []*TXoutput) {
+// FindEnoughUTXO search unspent output on the chain
+func (chain *Chain) FindEnoughUTXO(wallet *Wallet) (int, []*UTXO) {
 	// TODO
 	return 0, nil
 }
 
-// GetPreTransaction search a UTXO input previous transaction on the chain
-func GetPreTransaction(input *TXinput) *Transaction {
+// FindTransaction search a transaction by ID
+func (chain *Chain) FindTransaction(id []byte) (*Transaction, error) {
 	// TODO
-	return nil
+	return nil, nil
 }

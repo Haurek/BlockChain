@@ -2,15 +2,26 @@ package BlockChain
 
 // TXoutput is UTXO output type
 type TXoutput struct {
-	Index   int
-	Value   int
-	Address []byte
+	Value         int
+	ToAddress     []byte
+	PublicKeyHash []byte
 }
 
-// NewTXoutput create new UTXO output
-func (output *TXoutput) NewTXoutput(index int, value int, address []byte) *TXoutput {
-	output.Index = index
+// NewTXoutput create new transaction output
+func NewTXoutput(value int, address []byte) *TXoutput {
+	if value < 0 {
+		panic("wrong value")
+	}
+	output := &TXoutput{}
 	output.Value = value
-	output.Address = address
+	output.ToAddress = address
+	output.Lock(address)
+
 	return output
+}
+
+// Lock sender lock output use address
+func (output *TXoutput) Lock(address []byte) []byte {
+	output.PublicKeyHash = Address2PublicKeyHash(address)
+	return output.PublicKeyHash
 }

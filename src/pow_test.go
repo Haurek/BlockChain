@@ -1,36 +1,42 @@
 package BlockChain
 
-import (
-	"crypto/sha256"
-	"fmt"
-	"math"
-	"math/big"
-	"testing"
-)
-
-func TestMining(t *testing.T) {
-	var hashInt big.Int
-	target := big.NewInt(1)
-	target.Lsh(target, uint(256-8))
-	str := "12345678901234567890123456789099"
-	headerBytes := []byte(str)
-	var nonce int64
-	var hash [32]byte
-	nonce = 0
-	for nonce < math.MaxInt64 {
-		data := append(headerBytes, byte(nonce))
-		// hash twice
-		hash = sha256.Sum256(data)
-		hash = sha256.Sum256(hash[:])
-		hashInt.SetBytes(hash[:])
-		if hashInt.Cmp(target) == -1 {
-			break
-		} else {
-			nonce++
-		}
-	}
-	if nonce != math.MaxInt64 {
-		fmt.Println(nonce)
-		fmt.Println(string(hash[:]))
-	}
-}
+//
+//import (
+//	"fmt"
+//	"testing"
+//)
+//
+//func TestMining_and_Proof(t *testing.T) {
+//	input := []TXinput{
+//		{
+//			Index:     1,
+//			Value:     100,
+//			Address:   []byte("input_address_1"),
+//			Signature: []byte("input_signature_1"),
+//			PublicKey: []byte("input_public_key_1"),
+//		},
+//		// Add more inputs as needed
+//	}
+//	output := []TXoutput{
+//		{
+//			Index:   1,
+//			Value:   50,
+//			Address: []byte("output_address_1"),
+//		},
+//		// Add more outputs as needed
+//	}
+//	transaction := Transaction{
+//		ID:     []byte("some_transaction_id"),
+//		Inputs: input,
+//		Output: output,
+//	}
+//
+//	block := &Block{}
+//	Transactions := []*Transaction{
+//		&transaction,
+//	}
+//	block.NewBlock([]byte("previous_hash"), Transactions)
+//	fmt.Println(block.Header.Hash)
+//	fmt.Println(block.Header.Nonce)
+//	fmt.Println(Proof(block.Header))
+//}

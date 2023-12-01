@@ -1,9 +1,5 @@
 package BlockChain
 
-import (
-	"crypto/sha256"
-)
-
 // MerkleNode merkel tree node
 type MerkleNode struct {
 	Left  *MerkleNode
@@ -17,14 +13,13 @@ type MerkleTree struct {
 }
 
 // NewMerkleTree create merkle tree from transactions byte data
-func (tree *MerkleTree) NewMerkleTree(datas [][]byte) *MerkleTree {
+func NewMerkleTree(datas [][]byte) *MerkleTree {
 	var nodes []MerkleNode
 
 	// Create leaf nodes
 	for _, data := range datas {
-		node := MerkleNode{}
-		node.NewMerkleNode(nil, nil, data)
-		nodes = append(nodes, node)
+		node := NewMerkleNode(nil, nil, data)
+		nodes = append(nodes, *node)
 	}
 
 	// Build the tree
@@ -38,29 +33,31 @@ func (tree *MerkleTree) NewMerkleTree(datas [][]byte) *MerkleTree {
 
 		// Combine pairs and create parent nodes
 		for i := 0; i < len(nodes); i += 2 {
-			node := MerkleNode{}
-			node.NewMerkleNode(&nodes[i], &nodes[i+1], nil)
-			newLevel = append(newLevel, node)
+			node := NewMerkleNode(&nodes[i], &nodes[i+1], nil)
+			newLevel = append(newLevel, *node)
 		}
 
 		nodes = newLevel
 	}
 
-	tree.Root = &nodes[0]
+	tree := &MerkleTree{
+		Root: &nodes[0],
+	}
 
 	return tree
 }
 
 // NewMerkleNode create merkle tree node
-func (node *MerkleNode) NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {
+func NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {
+	var hash []byte
 	if data != nil {
-		hash := sha256.Sum256(data)
-		node.Hash = hash[:]
+		hash = Sha256Hash(data)
 	} else {
 		// If data is nil, it's an internal node
-		hash := sha256.Sum256(append(left.Hash, right.Hash...))
-		node.Hash = hash[:]
+		hash = Sha256Hash(append(left.Hash, right.Hash...))
 	}
-
+	node := &MerkleNode{
+		Hash: hash,
+	}
 	return node
 }
