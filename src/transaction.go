@@ -81,7 +81,7 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) *Transa
 			return nil
 		}
 		// sign input
-		message := preTx.HashTransaction()
+		message := HashTransaction(preTx)
 		sig, err := Sign(wallet.privateKey, message)
 		if err != nil {
 			return nil
@@ -126,7 +126,7 @@ func VerifyTransaction(chain *Chain, Tx *Transaction, publicKeyBytes []byte) boo
 
 		signature := input.Signature
 		//preTx := GetPreTransaction(input)
-		message := preTx.HashTransaction()
+		message := HashTransaction(preTx)
 		if Verify(Bytes2PublicKey(input.PublicKeyBytes), message, signature) == false {
 			return false
 		}
