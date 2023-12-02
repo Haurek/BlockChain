@@ -28,7 +28,7 @@ func CreateChain(address []byte) *Chain {
 	if _, err := os.Stat(DataBaseFile); os.IsNotExist(err) {
 		fmt.Println("Chain database already exists")
 		// load database
-		return InitChain()
+		return LoadChain()
 	}
 
 	opts := badger.DefaultOptions(DataBasePath)
