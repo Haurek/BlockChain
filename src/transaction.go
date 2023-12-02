@@ -1,8 +1,6 @@
 package BlockChain
 
 import (
-	"bytes"
-	"encoding/gob"
 	"fmt"
 )
 
@@ -15,40 +13,14 @@ type Transaction struct {
 
 // IsCoinBase check coinbase transaction
 func (Tx *Transaction) IsCoinBase() bool {
-	return len(Tx.Inputs) == 0 && Tx.Inputs[0].Value == -1
-}
-
-// Serialize Transaction struct
-func (Tx *Transaction) Serialize() ([]byte, error) {
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-
-	err := encoder.Encode(Tx)
-	if err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
-}
-
-// DeserializeTransaction []byte data to Transaction type
-func DeserializeTransaction(raw []byte) (*Transaction, error) {
-	buf := bytes.NewBuffer(raw)
-	decoder := gob.NewDecoder(buf)
-	var Tx Transaction
-	err := decoder.Decode(&Tx)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Tx, nil
+	return len(Tx.Inputs) == 0 && Tx.Inputs[0].Index == -1
 }
 
 // NewCoinbaseTx create coinbase transaction
 func NewCoinbaseTx(to []byte) *Transaction {
 	input := TXinput{
 		TxID:           nil,
-		Value:          -1,
+		Index:          -1,
 		FromAddress:    nil,
 		Signature:      nil,
 		PublicKeyBytes: nil,
@@ -65,7 +37,7 @@ func NewCoinbaseTx(to []byte) *Transaction {
 // NewTransaction create new transaction
 func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) *Transaction {
 	// Find enough UTXO from wallet address
-	balance, UTXOs := chain.FindEnoughUTXO(wallet)
+	balance, UTXOs := chain.FindEnoughUTXO(wallet.address)
 	if balance < amount {
 		fmt.Println("Not enough balance")
 		return nil
@@ -74,14 +46,14 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) *Transa
 	// build inputs
 	var inputs []TXinput
 	for _, utxo := range UTXOs {
-		input := NewTXinput(utxo.Value, wallet.address, utxo.TxID, wallet.GetPublicKeyBytes())
+		input := NewTXinput(utxo.Index, wallet.address, utxo.TxID, wallet.GetPublicKeyBytes())
 		preTx, err := chain.FindTransaction(input.TxID)
 		if err != nil {
 			fmt.Println("fail to find previous Tx")
 			return nil
 		}
 		// sign input
-		message := preTx.HashTransaction()
+		message := HashTransaction(preTx)
 		sig, err := Sign(wallet.privateKey, message)
 		if err != nil {
 			return nil
@@ -112,7 +84,7 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) *Transa
 // VerifyTransaction verify each input of transaction
 func VerifyTransaction(chain *Chain, Tx *Transaction, publicKeyBytes []byte) bool {
 	// coinbase
-	if Tx.IsCoinBase() {
+	if Tx.IsCoinBase() == true {
 		return true
 	}
 
@@ -126,7 +98,7 @@ func VerifyTransaction(chain *Chain, Tx *Transaction, publicKeyBytes []byte) boo
 
 		signature := input.Signature
 		//preTx := GetPreTransaction(input)
-		message := preTx.HashTransaction()
+		message := HashTransaction(preTx)
 		if Verify(Bytes2PublicKey(input.PublicKeyBytes), message, signature) == false {
 			return false
 		}
@@ -140,27 +112,11 @@ func VerifyTransaction(chain *Chain, Tx *Transaction, publicKeyBytes []byte) boo
 func HashTransaction(tx *Transaction) []byte {
 	txCopy := *tx
 	txCopy.ID = []byte{}
-	raw, err := txCopy.Serialize()
+	raw, err := Serialize(txCopy)
 	if err != nil {
 		fmt.Println("Error during serialization:", err)
 		return nil
 	}
 
 	return Sha256Hash(raw)
-}
-
-// UTXO type
-type UTXO struct {
-	TxID  []byte
-	Index int
-	Value int
-}
-
-// NewUTXO create new UTXO
-func NewUTXO(id []byte, index, value int) *UTXO {
-	return &UTXO{
-		TxID:  id,
-		Index: index,
-		Value: value,
-	}
 }

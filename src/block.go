@@ -1,9 +1,6 @@
 package BlockChain
 
 import (
-	"bytes"
-	"encoding/gob"
-	"fmt"
 	"time"
 )
 
@@ -35,11 +32,8 @@ func NewBlock(preHash []byte, Txs []*Transaction) *Block {
 	// Serialize Transactions
 	var TxsBytes [][]byte
 	for _, Tx := range Txs {
-		TxBytes, err := Tx.Serialize()
-		if err != nil {
-			fmt.Println("Error during serialization:", err)
-			return nil
-		}
+		TxBytes, err := Serialize(Tx)
+		HandleError(err)
 		TxsBytes = append(TxsBytes, TxBytes)
 	}
 	// generate merkle tree
@@ -59,42 +53,40 @@ func NewBlock(preHash []byte, Txs []*Transaction) *Block {
 
 // NewGenesisBlock create a genesis block
 func NewGenesisBlock(coinBase *Transaction) *Block {
-	return NewBlock([]byte("a Genesis Block"), []*Transaction{coinBase})
+	return NewBlock([]byte{}, []*Transaction{coinBase})
 }
 
-// Serialize Block struct
-func (block *Block) Serialize() []byte {
-	// TODO
-	return nil
+func (block *Block) IsGenesisBlock() bool {
+	return len(block.Header.PrevHash) == 0
 }
 
-// DeserializeBlock []byte data to Block type
-func DeserializeBlock(raw []byte) *Block {
-	// TODO
-	return nil
-}
-
-// Serialize BlockHeader struct
-func (header *BlockHeader) Serialize() []byte {
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-	err := encoder.Encode(header)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return nil
-	}
-
-	return buf.Bytes()
-}
-
-// DeserializeBlockHeader []byte data to BlockHeader type
-func DeserializeBlockHeader(raw []byte) *BlockHeader {
-	var header BlockHeader
-	decoder := gob.NewDecoder(bytes.NewReader(raw))
-	err := decoder.Decode(header)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return nil
-	}
-	return &header
-}
+//// Serialize Block struct
+//func (block *Block) Serialize() []byte {
+//	// TODO
+//	return nil
+//}
+//
+//// DeserializeBlock []byte data to Block type
+//func DeserializeBlock(raw []byte) *Block {
+//	// TODO
+//	return nil
+//}
+//
+//// Serialize BlockHeader struct
+//func (header *BlockHeader) Serialize() []byte {
+//	var buf bytes.Buffer
+//	encoder := gob.NewEncoder(&buf)
+//	err := encoder.Encode(header)
+//	HandleError(err)
+//
+//	return buf.Bytes()
+//}
+//
+//// DeserializeBlockHeader []byte data to BlockHeader type
+//func DeserializeBlockHeader(raw []byte) *BlockHeader {
+//	var header BlockHeader
+//	decoder := gob.NewDecoder(bytes.NewReader(raw))
+//	err := decoder.Decode(header)
+//	HandleError(err)
+//	return &header
+//}

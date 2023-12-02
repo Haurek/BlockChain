@@ -1,5 +1,7 @@
 package BlockChain
 
+import "bytes"
+
 // TXoutput is UTXO output type
 type TXoutput struct {
 	Value         int
@@ -24,4 +26,9 @@ func NewTXoutput(value int, address []byte) *TXoutput {
 func (output *TXoutput) Lock(address []byte) []byte {
 	output.PublicKeyHash = Address2PublicKeyHash(address)
 	return output.PublicKeyHash
+}
+
+// CanBeUnlocked output can be unlocked by address
+func (output *TXoutput) CanBeUnlocked(address []byte) bool {
+	return bytes.Equal(output.PublicKeyHash, Address2PublicKeyHash(address))
 }
