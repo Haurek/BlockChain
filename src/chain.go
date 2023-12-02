@@ -124,7 +124,10 @@ func (chain *Chain) AddBlock(block *Block) bool {
 
 // HaveBlock check a block in chain
 func (chain *Chain) HaveBlock(hash []byte) bool {
-	// TODO
+	// check block is valid
+	if chain.FindBlock(hash) != nil {
+		return true
+	}
 	return false
 }
 
