@@ -54,8 +54,8 @@ func CreateChain(address []byte) *Chain {
 	return chain
 }
 
-// InitChain initialize chain from database
-func InitChain() *Chain {
+// LoadChain initialize chain from database
+func LoadChain() *Chain {
 	if _, err := os.Stat(DataBaseFile); os.IsNotExist(err) {
 		fmt.Println("No Chain found")
 		return nil
@@ -101,8 +101,25 @@ func (iterator *BlockIterator) Next() *Block {
 
 // AddBlock add a block to chain
 func (chain *Chain) AddBlock(block *Block) bool {
-	// TODO
-	return true
+	preHash := block.Header.PrevHash
+	preBlockData, err := ReadFromDB(chain.DataBase, []byte(BlockTable), preHash)
+	HandleError(err)
+
+	var preBlock *Block
+	err = Deserialize(preBlockData, preBlock)
+	HandleError(err)
+
+	if bytes.Equal(preBlock.Header.Hash, block.Header.PrevHash) && Proof(block.Header) {
+		serializeData, err := Serialize(block)
+		HandleError(err)
+		err = WriteToDB(chain.DataBase, []byte(BlockTable), block.Header.Hash, serializeData)
+		HandleError(err)
+		return true
+	} else {
+		return false
+	}
+
+	return false
 }
 
 // HaveBlock check a block in chain
@@ -141,8 +158,8 @@ func (chain *Chain) FindTransaction(id []byte) (*Transaction, error) {
 }
 
 // FindUTXO find all UTXO in Chain
-func (chain *Chain) FindUTXO() map[string]UTXO {
-	utxos := make(map[string]UTXO)
+func (chain *Chain) FindUTXO() map[string][]UTXO {
+	utxosMap := make(map[string][]UTXO)
 	spentTxOutputs := make(map[string][]int)
 	iter := chain.Iterator()
 
@@ -166,7 +183,13 @@ func (chain *Chain) FindUTXO() map[string]UTXO {
 				}
 				// out is unspent
 				if spent == false {
-					utxos[id].outputs = append(utxos[id].outputs, out)
+					utxos := utxosMap[id]
+					utxo := UTXO{
+						Index:  outIndex,
+						Output: out,
+					}
+					utxos = append(utxos, utxo)
+					utxosMap[id] = utxos
 				}
 			}
 
@@ -184,5 +207,5 @@ func (chain *Chain) FindUTXO() map[string]UTXO {
 			break
 		}
 	}
-	return utxos
+	return utxosMap
 }

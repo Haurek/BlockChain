@@ -2,49 +2,54 @@ package BlockChain
 
 import (
 	badger "badger-4.2.0"
+	"encoding/hex"
 )
 
 // UTXO type
 type UTXO struct {
-	outputs []TXoutput
+	Index  int
+	Output TXoutput
 }
 
-//// NewUTXO create new UTXO
-//func NewUTXO(id []byte, index, value int) *UTXO {
-//	return &UTXO{
-//		TxID:  id,
-//		Index: index,
-//		Value: value,
-//	}
+//type UTXOSet struct {
+//	UTXODb *badger.DB
 //}
 
-type UTXOSet struct {
-	UTXODb *badger.DB
-}
-
-// FindEnoughUTXO find enough UTXO from UTXO set
-func (u *UTXOSet) FindEnoughUTXO(address []byte, amount int) (int, []*TXoutput) {
-	utxos := make([]*TXoutput, MaxUTXOSize)
+// FindEnoughUTXOFromSet find enough UTXO from UTXO set
+// return UTXO total value
+// map[string][]int: TxID->[unspent output index]
+func FindEnoughUTXOFromSet(utxoDb *badger.DB, address []byte, amount int) (int, map[string][]int) {
+	utxos := make(map[string][]int)
 	sum := 0
-	err := u.UTXODb.View(func(txn *badger.Txn) error {
+	err := utxoDb.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchSize = 10
 		iter := txn.NewIterator(opts)
 		defer iter.Close()
 
+		// traverse UTXO set
 		prefix := []byte(ChainStateTable)
 		for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
 			item := iter.Item()
 
+			// get TxID
+			key := item.KeyCopy(nil)[1:]
+			id := hex.EncodeToString(key)
 			err := item.Value(func(val []byte) error {
-				var utxo *UTXO
+				// Deserialize value to []UTXO
+				var utxo []UTXO
 				err := Deserialize(val, utxo)
 				if err != nil {
 					return err
 				}
-				if out.CanBeUnlocked(address) {
-					sum += out.Value
-					utxos = append(utxos, out)
+				// get UTXO from []UTXO
+				for _, out := range utxo {
+					// belong to address
+					if out.Output.CanBeUnlocked(address) {
+						sum += out.Output.Value
+						// add index
+						utxos[id] = append(utxos[id], out.Index)
+					}
 				}
 				return nil
 			})
@@ -66,11 +71,10 @@ func (u *UTXOSet) FindEnoughUTXO(address []byte, amount int) (int, []*TXoutput) 
 	}
 }
 
-// FindUTXO find all UTXO of address
-func (u *UTXOSet) FindUTXO(address []byte) (int, []*TXoutput) {
-	utxos := make([]*TXoutput, MaxUTXOSize)
+// GetBalanceFromSet calculate balance of address
+func GetBalanceFromSet(utxoDb *badger.DB, address []byte) int {
 	balance := 0
-	err := u.UTXODb.View(func(txn *badger.Txn) error {
+	err := utxoDb.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchSize = 10
 		iter := txn.NewIterator(opts)
@@ -81,14 +85,18 @@ func (u *UTXOSet) FindUTXO(address []byte) (int, []*TXoutput) {
 			item := iter.Item()
 
 			err := item.Value(func(val []byte) error {
-				var out *TXoutput
-				err := Deserialize(val, out)
+				// Deserialize value to []UTXO
+				var utxo []UTXO
+				err := Deserialize(val, utxo)
 				if err != nil {
 					return err
 				}
-				if out.CanBeUnlocked(address) {
-					balance += out.Value
-					utxos = append(utxos, out)
+				// get UTXO from []UTXO
+				for _, out := range utxo {
+					// belong to address
+					if out.Output.CanBeUnlocked(address) {
+						balance += out.Output.Value
+					}
 				}
 				return nil
 			})
@@ -101,5 +109,67 @@ func (u *UTXOSet) FindUTXO(address []byte) (int, []*TXoutput) {
 	})
 	HandleError(err)
 
-	return balance, utxos
+	return balance
+}
+
+// ReindexUTXOSet update UTXO set
+// utxoMap from chain.FindUTXO
+func ReindexUTXOSet(utxoDb *badger.DB, utxoMap map[string][]UTXO) {
+	// delete all UTXO item from database
+	err := utxoDb.Update(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchSize = 10
+		iter := txn.NewIterator(opts)
+		defer iter.Close()
+
+		prefix := []byte("c")
+		for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
+			item := iter.Item()
+			key := item.KeyCopy(nil)
+
+			if err := txn.Delete(key); err != nil {
+				return err
+			}
+		}
+
+		// add new UTXO item to database
+		for id, utxos := range utxoMap {
+			txId, err := hex.DecodeString(id)
+			HandleError(err)
+			serializeData, err := Serialize(utxos)
+			HandleError(err)
+			err = txn.Set(append([]byte(ChainStateTable), txId...), serializeData)
+			HandleError(err)
+		}
+		return nil
+	})
+	HandleError(err)
+}
+
+// UpdateUTXOSet update UTXO set when a new block add to chain
+func UpdateUTXOSet(utxoDb *badger.DB, block *Block) {
+	for _, tx := range block.Transactions {
+		if tx.IsCoinbase() == false {
+			var utxos []UTXO
+			var newUTXO []UTXO
+			serializeData, err := ReadFromDB(utxoDb, []byte(ChainStateTable), *tx.TxId)
+			HandleError(err)
+			err = Deserialize(serializeData, &utxos)
+
+			for _, utxo := range utxos {
+				// find input corresponding output
+				for _, in := range tx.Inputs {
+					if in.Index == utxo.Index {
+						break
+					}
+					newUTXO = append(newUTXO, utxo)
+				}
+			}
+
+			serializeData, err = Serialize(newUTXO)
+			HandleError(err)
+			err = UpdateInDB(utxoDb, []byte(ChainStateTable), *tx.TxId, serializeData)
+			HandleError(err)
+		}
+	}
 }

@@ -1,6 +1,7 @@
 package BlockChain
 
 import (
+	"encoding/hex"
 	"fmt"
 )
 
@@ -37,7 +38,7 @@ func NewCoinbaseTx(to []byte) *Transaction {
 // NewTransaction create new transaction
 func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) *Transaction {
 	// Find enough UTXO from wallet address
-	balance, UTXOs := chain.FindEnoughUTXO(wallet.address)
+	balance, utxosMap := FindEnoughUTXOFromSet(chain.DataBase, wallet.address, amount)
 	if balance < amount {
 		fmt.Println("Not enough balance")
 		return nil
@@ -45,21 +46,26 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) *Transa
 
 	// build inputs
 	var inputs []TXinput
-	for _, utxo := range UTXOs {
-		input := NewTXinput(utxo.Index, wallet.address, utxo.TxID, wallet.GetPublicKeyBytes())
-		preTx, err := chain.FindTransaction(input.TxID)
-		if err != nil {
-			fmt.Println("fail to find previous Tx")
-			return nil
+	for id, indexSet := range utxosMap {
+		// decode id
+		txId, err := hex.DecodeString(id)
+		HandleError(err)
+		for index := range indexSet {
+			input := NewTXinput(index, wallet.address, txId, wallet.GetPublicKeyBytes())
+			preTx, err := chain.FindTransaction(input.TxID)
+			if err != nil {
+				fmt.Println("fail to find previous Tx")
+				return nil
+			}
+			// sign input
+			message := HashTransaction(preTx)
+			sig, err := Sign(wallet.privateKey, message)
+			if err != nil {
+				return nil
+			}
+			input.SetSignature(sig)
+			inputs = append(inputs, *input)
 		}
-		// sign input
-		message := HashTransaction(preTx)
-		sig, err := Sign(wallet.privateKey, message)
-		if err != nil {
-			return nil
-		}
-		input.SetSignature(sig)
-		inputs = append(inputs, *input)
 	}
 
 	// build outputs
