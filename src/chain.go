@@ -107,7 +107,10 @@ func (chain *Chain) AddBlock(block *Block) bool {
 
 // HaveBlock check a block in chain
 func (chain *Chain) HaveBlock(hash []byte) bool {
-	// TODO
+	// check block is valid
+	if chain.FindBlock(hash) != nil {
+		return true
+	}
 	return false
 }
 
@@ -166,7 +169,9 @@ func (chain *Chain) FindUTXO() map[string]UTXO {
 				}
 				// out is unspent
 				if spent == false {
-					utxos[id].outputs = append(utxos[id].outputs, out)
+					utxo := utxos[id]
+					utxo.outputs = append(utxos[id].outputs, out)
+					utxos[id] = utxo
 				}
 			}
 

@@ -120,3 +120,30 @@ func HashTransaction(tx *Transaction) []byte {
 
 	return Sha256Hash(raw)
 }
+
+// 定义交易信息池结构
+type TxPool struct {
+	Transactions []*Transaction
+}
+
+// 创建一个新的交易信息池
+func NewTxPool() *TxPool {
+	return &TxPool{
+		Transactions: make([]*Transaction, 0),
+	}
+}
+
+// 将新的交易添加到交易信息池中
+func (tp *TxPool) AddTransaction(tx *Transaction) {
+	tp.Transactions = append(tp.Transactions, tx)
+}
+
+// 获取当前交易信息池中的所有交易
+func (tp *TxPool) GetTransactions() []*Transaction {
+	return tp.Transactions
+}
+
+// 清空交易信息池
+func (tp *TxPool) ClearPool() {
+	tp.Transactions = make([]*Transaction, 0)
+}
