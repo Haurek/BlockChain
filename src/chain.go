@@ -1,7 +1,7 @@
 package BlockChain
 
 import (
-	badger "badger-4.2.0"
+	"badger"
 	"bytes"
 	"encoding/hex"
 	"errors"
@@ -25,7 +25,8 @@ type BlockIterator struct {
 // address use for genesis block
 func CreateChain(address []byte) *Chain {
 	// create a database
-	if _, err := os.Stat(DataBaseFile); os.IsNotExist(err) {
+	_, err := os.Stat(DataBaseFile)
+	if !os.IsNotExist(err) {
 		fmt.Println("Chain database already exists")
 		// load database
 		return LoadChain()
@@ -37,16 +38,29 @@ func CreateChain(address []byte) *Chain {
 	HandleError(err)
 
 	// Genesis node create GenesisBlock
-	coinBaseTx := NewCoinbaseTx(address)
-	genesisBlock := NewGenesisBlock(coinBaseTx)
-	// add genesis block
+	genesisBlock := NewGenesisBlock(address)
+
+	// add genesis block to Chain
 	data, err := Serialize(genesisBlock)
 	HandleError(err)
 	err = WriteToDB(db, []byte(BlockTable), genesisBlock.Header.Hash, data)
 	HandleError(err)
+
 	// add latest block flag
 	err = WriteToDB(db, []byte(BlockTable), []byte(TipHashKey), genesisBlock.Header.Hash)
 	HandleError(err)
+
+	// add GenesisBlock output to UTXO set
+	genesisOutput := genesisBlock.Transactions[0].Outputs[0]
+	var utxos []UTXO
+	utxos = append(utxos, UTXO{
+		Index:  0,
+		Output: genesisOutput,
+	})
+	data, err = Serialize(utxos)
+	HandleError(err)
+	err = WriteToDB(db, []byte(ChainStateTable), genesisBlock.Transactions[0].ID, data)
+
 	chain := &Chain{
 		Tip:      genesisBlock.Header.Hash,
 		DataBase: db,
@@ -90,13 +104,13 @@ func (iterator *BlockIterator) Next() *Block {
 	serializeData, err := ReadFromDB(iterator.DataBase, []byte(BlockTable), iterator.CurrentHash)
 	HandleError(err)
 	// deserialize data
-	var currentBlock *Block
-	err = Deserialize(serializeData, currentBlock)
+	var currentBlock Block
+	err = Deserialize(serializeData, &currentBlock)
 	HandleError(err)
 	// update next point
 	iterator.CurrentHash = currentBlock.Header.PrevHash
 
-	return currentBlock
+	return &currentBlock
 }
 
 // AddBlock add a block to chain
@@ -105,15 +119,22 @@ func (chain *Chain) AddBlock(block *Block) bool {
 	preBlockData, err := ReadFromDB(chain.DataBase, []byte(BlockTable), preHash)
 	HandleError(err)
 
-	var preBlock *Block
-	err = Deserialize(preBlockData, preBlock)
+	var preBlock Block
+	err = Deserialize(preBlockData, &preBlock)
 	HandleError(err)
 
 	if bytes.Equal(preBlock.Header.Hash, block.Header.PrevHash) && Proof(block.Header) {
+		// add to database
 		serializeData, err := Serialize(block)
 		HandleError(err)
 		err = WriteToDB(chain.DataBase, []byte(BlockTable), block.Header.Hash, serializeData)
 		HandleError(err)
+
+		// update UTXO set
+		UpdateUTXOSet(chain.DataBase, block)
+
+		// update tip
+		chain.Tip = block.Header.Hash
 		return true
 	} else {
 		return false
@@ -135,10 +156,10 @@ func (chain *Chain) HaveBlock(hash []byte) bool {
 func (chain *Chain) FindBlock(hash []byte) *Block {
 	serializeData, err := ReadFromDB(chain.DataBase, []byte(BlockTable), hash)
 	HandleError(err)
-	var block *Block
-	err = Deserialize(serializeData, block)
+	var block Block
+	err = Deserialize(serializeData, &block)
 	HandleError(err)
-	return block
+	return &block
 }
 
 // FindTransaction return a transaction by ID
@@ -147,14 +168,14 @@ func (chain *Chain) FindTransaction(id []byte) (*Transaction, error) {
 	for {
 		block := iter.Next()
 
-		// check Genesis Block
-		if block.IsGenesisBlock() {
-			break
-		}
 		for _, Tx := range block.Transactions {
 			if bytes.Equal(Tx.ID, id) {
 				return Tx, nil
 			}
+		}
+		// check Genesis Block
+		if block.IsGenesisBlock() {
+			break
 		}
 	}
 	return nil, errors.New("Transaction not found")

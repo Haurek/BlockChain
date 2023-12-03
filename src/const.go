@@ -20,4 +20,7 @@ const (
 	BlockTable      = "b"
 	ChainStateTable = "c"
 	MaxUTXOSize     = 1024
+
+	// Transaction pool
+	MaxTxPoolSize = 1024
 )

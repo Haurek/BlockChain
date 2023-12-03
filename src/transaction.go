@@ -2,6 +2,7 @@ package BlockChain
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 )
 
@@ -14,17 +15,17 @@ type Transaction struct {
 
 // IsCoinBase check coinbase transaction
 func (Tx *Transaction) IsCoinBase() bool {
-	return len(Tx.Inputs) == 0 && Tx.Inputs[0].Index == -1
+	return len(Tx.Inputs) == 1 && Tx.Inputs[0].Index == -1
 }
 
 // NewCoinbaseTx create coinbase transaction
 func NewCoinbaseTx(to []byte) *Transaction {
 	input := TXinput{
-		TxID:           nil,
+		TxID:           []byte{},
 		Index:          -1,
-		FromAddress:    nil,
-		Signature:      nil,
-		PublicKeyBytes: nil,
+		FromAddress:    []byte{},
+		Signature:      []byte{},
+		PublicKeyBytes: []byte{},
 	}
 	output := NewTXoutput(Reward, to)
 	Tx := &Transaction{
@@ -32,16 +33,16 @@ func NewCoinbaseTx(to []byte) *Transaction {
 		Inputs:  []TXinput{input},
 		Outputs: []TXoutput{*output},
 	}
+	Tx.ID = HashTransaction(Tx)
 	return Tx
 }
 
 // NewTransaction create new transaction
-func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) *Transaction {
+func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Transaction, error) {
 	// Find enough UTXO from wallet address
 	balance, utxosMap := FindEnoughUTXOFromSet(chain.DataBase, wallet.address, amount)
 	if balance < amount {
-		fmt.Println("Not enough balance")
-		return nil
+		return nil, errors.New("Not enough balance")
 	}
 
 	// build inputs
@@ -54,15 +55,12 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) *Transa
 			input := NewTXinput(index, wallet.address, txId, wallet.GetPublicKeyBytes())
 			preTx, err := chain.FindTransaction(input.TxID)
 			if err != nil {
-				fmt.Println("fail to find previous Tx")
-				return nil
+				return nil, errors.New("fail to find previous Tx")
 			}
 			// sign input
 			message := HashTransaction(preTx)
 			sig, err := Sign(wallet.privateKey, message)
-			if err != nil {
-				return nil
-			}
+			HandleError(err)
 			input.SetSignature(sig)
 			inputs = append(inputs, *input)
 		}
@@ -84,7 +82,7 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) *Transa
 		Outputs: outputs,
 	}
 	Tx.ID = HashTransaction(Tx)
-	return Tx
+	return Tx, nil
 }
 
 // VerifyTransaction verify each input of transaction
@@ -135,7 +133,7 @@ type TxPool struct {
 // 创建一个新的交易信息池
 func NewTxPool() *TxPool {
 	return &TxPool{
-		Transactions: make([]*Transaction, 0),
+		Transactions: make([]*Transaction, MaxTxPoolSize),
 	}
 }
 
@@ -151,5 +149,6 @@ func (tp *TxPool) GetTransactions() []*Transaction {
 
 // 清空交易信息池
 func (tp *TxPool) ClearPool() {
+	//clear(tp.Transactions)
 	tp.Transactions = make([]*Transaction, 0)
 }

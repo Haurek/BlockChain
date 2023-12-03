@@ -52,41 +52,11 @@ func NewBlock(preHash []byte, Txs []*Transaction) *Block {
 }
 
 // NewGenesisBlock create a genesis block
-func NewGenesisBlock(coinBase *Transaction) *Block {
-	return NewBlock([]byte{}, []*Transaction{coinBase})
+func NewGenesisBlock(address []byte) *Block {
+	coinBaseTx := NewCoinbaseTx(address)
+	return NewBlock([]byte{}, []*Transaction{coinBaseTx})
 }
 
 func (block *Block) IsGenesisBlock() bool {
 	return len(block.Header.PrevHash) == 0
 }
-
-//// Serialize Block struct
-//func (block *Block) Serialize() []byte {
-//	// TODO
-//	return nil
-//}
-//
-//// DeserializeBlock []byte data to Block type
-//func DeserializeBlock(raw []byte) *Block {
-//	// TODO
-//	return nil
-//}
-//
-//// Serialize BlockHeader struct
-//func (header *BlockHeader) Serialize() []byte {
-//	var buf bytes.Buffer
-//	encoder := gob.NewEncoder(&buf)
-//	err := encoder.Encode(header)
-//	HandleError(err)
-//
-//	return buf.Bytes()
-//}
-//
-//// DeserializeBlockHeader []byte data to BlockHeader type
-//func DeserializeBlockHeader(raw []byte) *BlockHeader {
-//	var header BlockHeader
-//	decoder := gob.NewDecoder(bytes.NewReader(raw))
-//	err := decoder.Decode(header)
-//	HandleError(err)
-//	return &header
-//}

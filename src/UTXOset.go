@@ -1,8 +1,9 @@
 package BlockChain
 
 import (
-	badger "badger-4.2.0"
+	"badger"
 	"encoding/hex"
+	"errors"
 )
 
 // UTXO type
@@ -38,7 +39,7 @@ func FindEnoughUTXOFromSet(utxoDb *badger.DB, address []byte, amount int) (int, 
 			err := item.Value(func(val []byte) error {
 				// Deserialize value to []UTXO
 				var utxo []UTXO
-				err := Deserialize(val, utxo)
+				err := Deserialize(val, &utxo)
 				if err != nil {
 					return err
 				}
@@ -87,7 +88,7 @@ func GetBalanceFromSet(utxoDb *badger.DB, address []byte) int {
 			err := item.Value(func(val []byte) error {
 				// Deserialize value to []UTXO
 				var utxo []UTXO
-				err := Deserialize(val, utxo)
+				err := Deserialize(val, &utxo)
 				if err != nil {
 					return err
 				}
@@ -149,27 +150,43 @@ func ReindexUTXOSet(utxoDb *badger.DB, utxoMap map[string][]UTXO) {
 // UpdateUTXOSet update UTXO set when a new block add to chain
 func UpdateUTXOSet(utxoDb *badger.DB, block *Block) {
 	for _, tx := range block.Transactions {
-		if tx.IsCoinbase() == false {
+		if tx.IsCoinBase() == false {
 			var utxos []UTXO
 			var newUTXO []UTXO
-			serializeData, err := ReadFromDB(utxoDb, []byte(ChainStateTable), *tx.TxId)
-			HandleError(err)
-			err = Deserialize(serializeData, &utxos)
-
-			for _, utxo := range utxos {
-				// find input corresponding output
-				for _, in := range tx.Inputs {
-					if in.Index == utxo.Index {
-						break
+			serializeData, err := ReadFromDB(utxoDb, []byte(ChainStateTable), tx.ID)
+			// not found in set
+			// add all output to database
+			if errors.Is(err, badger.ErrKeyNotFound) {
+				var item []UTXO
+				for i, out := range tx.Outputs {
+					utxo := UTXO{
+						Index:  i,
+						Output: out,
 					}
-					newUTXO = append(newUTXO, utxo)
+					item = append(item, utxo)
 				}
-			}
+				serializeData, err = Serialize(&item)
+				HandleError(err)
+				err = WriteToDB(utxoDb, []byte(ChainStateTable), tx.ID, serializeData)
+				HandleError(err)
+			} else {
+				err = Deserialize(serializeData, &utxos)
 
-			serializeData, err = Serialize(newUTXO)
-			HandleError(err)
-			err = UpdateInDB(utxoDb, []byte(ChainStateTable), *tx.TxId, serializeData)
-			HandleError(err)
+				for _, utxo := range utxos {
+					// find input corresponding output
+					for _, in := range tx.Inputs {
+						if in.Index == utxo.Index {
+							break
+						}
+						newUTXO = append(newUTXO, utxo)
+					}
+				}
+
+				serializeData, err = Serialize(newUTXO)
+				HandleError(err)
+				err = UpdateInDB(utxoDb, []byte(ChainStateTable), tx.ID, serializeData)
+				HandleError(err)
+			}
 		}
 	}
 }

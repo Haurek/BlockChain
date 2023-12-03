@@ -1,6 +1,6 @@
 package BlockChain
 
-import badger "badger-4.2.0"
+import "badger"
 
 // WriteToDB write key-value to database
 func WriteToDB(db *badger.DB, tablePrefix, key, value []byte) error {
