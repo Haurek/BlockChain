@@ -1,4 +1,4 @@
-package BlockChain
+package main
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ func Base58Encode(input []byte) []byte {
 	}
 
 	// bitcoin
-	if input[0] == 0x00 {
+	if input[0] == AddressVersion {
 		enc = append(enc, b58Alphabet[0])
 	}
 
@@ -47,7 +47,7 @@ func Base58Decode(input []byte) []byte {
 	decoded := result.Bytes()
 
 	if input[0] == b58Alphabet[0] {
-		decoded = append([]byte{0x00}, decoded...)
+		decoded = append([]byte{AddressVersion}, decoded...)
 	}
 
 	return decoded

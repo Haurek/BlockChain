@@ -1,4 +1,4 @@
-package BlockChain
+package main
 
 import (
 	"badger"
@@ -7,86 +7,21 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 )
 
 // Chain type
 type Chain struct {
-	Tip      []byte
-	DataBase *badger.DB
+	Tip        []byte
+	BestHeight int
+	DataBase   *badger.DB
+	Lock       sync.Mutex
 }
 
 // BlockIterator block iterator
 type BlockIterator struct {
 	CurrentHash []byte
 	DataBase    *badger.DB
-}
-
-// CreateChain create a new chain
-// address use for genesis block
-func CreateChain(address []byte) *Chain {
-	// create a database
-	_, err := os.Stat(DataBaseFile)
-	if !os.IsNotExist(err) {
-		fmt.Println("Chain database already exists")
-		// load database
-		return LoadChain()
-	}
-
-	opts := badger.DefaultOptions(DataBasePath)
-	opts.Logger = nil
-	db, err := badger.Open(opts)
-	HandleError(err)
-
-	// Genesis node create GenesisBlock
-	genesisBlock := NewGenesisBlock(address)
-
-	// add genesis block to Chain
-	data, err := Serialize(genesisBlock)
-	HandleError(err)
-	err = WriteToDB(db, []byte(BlockTable), genesisBlock.Header.Hash, data)
-	HandleError(err)
-
-	// add latest block flag
-	err = WriteToDB(db, []byte(BlockTable), []byte(TipHashKey), genesisBlock.Header.Hash)
-	HandleError(err)
-
-	// add GenesisBlock output to UTXO set
-	genesisOutput := genesisBlock.Transactions[0].Outputs[0]
-	var utxos []UTXO
-	utxos = append(utxos, UTXO{
-		Index:  0,
-		Output: genesisOutput,
-	})
-	data, err = Serialize(utxos)
-	HandleError(err)
-	err = WriteToDB(db, []byte(ChainStateTable), genesisBlock.Transactions[0].ID, data)
-
-	chain := &Chain{
-		Tip:      genesisBlock.Header.Hash,
-		DataBase: db,
-	}
-	return chain
-}
-
-// LoadChain initialize chain from database
-func LoadChain() *Chain {
-	if _, err := os.Stat(DataBaseFile); os.IsNotExist(err) {
-		fmt.Println("No Chain found")
-		return nil
-	}
-	opts := badger.DefaultOptions(DataBasePath)
-	opts.Logger = nil
-	db, err := badger.Open(opts)
-	HandleError(err)
-
-	latestHash, err := ReadFromDB(db, []byte(BlockTable), []byte(TipHashKey))
-	HandleError(err)
-
-	chain := &Chain{
-		Tip:      latestHash,
-		DataBase: db,
-	}
-	return chain
 }
 
 // Iterator create a block iterator
@@ -113,16 +48,101 @@ func (iterator *BlockIterator) Next() *Block {
 	return &currentBlock
 }
 
-// AddBlock add a block to chain
-func (chain *Chain) AddBlock(block *Block) bool {
-	preHash := block.Header.PrevHash
-	preBlockData, err := ReadFromDB(chain.DataBase, []byte(BlockTable), preHash)
+// CreateChain create a new chain
+// address use for genesis block
+func CreateChain(address []byte) *Chain {
+	// create a database
+	_, err := os.Stat(DataBaseFile)
+	if !os.IsNotExist(err) {
+		fmt.Println("Chain database already exists")
+		// load database
+		return LoadChain()
+	}
+
+	// open database
+	opts := badger.DefaultOptions(DataBasePath)
+	opts.Logger = nil
+	db, err := badger.Open(opts)
 	HandleError(err)
 
+	// Genesis node create GenesisBlock
+	genesisBlock, err := NewGenesisBlock(address)
+	HandleError(err)
+
+	// add latest block flag
+	err = WriteToDB(db, []byte(BlockTable), []byte(TipHashKey), genesisBlock.Header.Hash)
+	HandleError(err)
+
+	chain := &Chain{
+		Tip:        genesisBlock.Header.Hash,
+		BestHeight: 1,
+		DataBase:   db,
+	}
+	// add genesis block
+	chain.AddGenesisBlock(genesisBlock)
+
+	return chain
+}
+
+// LoadChain initialize chain from database
+func LoadChain() *Chain {
+	// check chain database exist
+	if _, err := os.Stat(DataBaseFile); os.IsNotExist(err) {
+		fmt.Println("No Chain found")
+		return nil
+	}
+	// load local database
+	opts := badger.DefaultOptions(DataBasePath)
+	opts.Logger = nil
+	db, err := badger.Open(opts)
+	HandleError(err)
+
+	// read tip hash from database
+	latestHash, err := ReadFromDB(db, []byte(BlockTable), []byte(TipHashKey))
+	HandleError(err)
+
+	chain := &Chain{
+		Tip:      latestHash,
+		DataBase: db,
+	}
+
+	return chain
+}
+
+// AddGenesisBlock add genesis block to chain and update UTXO set
+func (chain *Chain) AddGenesisBlock(genesisBlock *Block) {
+	// add genesis block to Chain
+	data, err := Serialize(genesisBlock)
+	HandleError(err)
+	err = WriteToDB(chain.DataBase, []byte(BlockTable), genesisBlock.Header.Hash, data)
+	HandleError(err)
+
+	// add GenesisBlock output to UTXO set
+	genesisOutput := genesisBlock.Transactions[0].Outputs[0]
+	var utxos []UTXO
+	utxos = append(utxos, UTXO{
+		Index:  0,
+		Output: genesisOutput,
+	})
+	data, err = Serialize(utxos)
+	HandleError(err)
+	err = WriteToDB(chain.DataBase, []byte(ChainStateTable), genesisBlock.Transactions[0].ID, data)
+	HandleError(err)
+}
+
+// AddBlock add a block to chain
+func (chain *Chain) AddBlock(block *Block) bool {
+	// get current block previous hash
+	preHash := block.Header.PrevHash
+
+	// get previous block from database
+	preBlockData, err := ReadFromDB(chain.DataBase, []byte(BlockTable), preHash)
+	HandleError(err)
 	var preBlock Block
 	err = Deserialize(preBlockData, &preBlock)
 	HandleError(err)
 
+	// check hash and PoW verify
 	if bytes.Equal(preBlock.Header.Hash, block.Header.PrevHash) && Proof(block.Header) {
 		// add to database
 		serializeData, err := Serialize(block)
@@ -135,9 +155,8 @@ func (chain *Chain) AddBlock(block *Block) bool {
 
 		// update tip
 		chain.Tip = block.Header.Hash
+		chain.BestHeight += 1
 		return true
-	} else {
-		return false
 	}
 
 	return false

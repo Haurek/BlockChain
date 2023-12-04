@@ -1,4 +1,4 @@
-package BlockChain
+package main
 
 // MerkleNode merkel tree node
 type MerkleNode struct {

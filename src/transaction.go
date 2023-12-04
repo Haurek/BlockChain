@@ -1,4 +1,4 @@
-package BlockChain
+package main
 
 import (
 	"encoding/hex"
@@ -19,7 +19,7 @@ func (Tx *Transaction) IsCoinBase() bool {
 }
 
 // NewCoinbaseTx create coinbase transaction
-func NewCoinbaseTx(to []byte) *Transaction {
+func NewCoinbaseTx(to []byte, reward int) *Transaction {
 	input := TXinput{
 		TxID:           []byte{},
 		Index:          -1,
@@ -27,7 +27,7 @@ func NewCoinbaseTx(to []byte) *Transaction {
 		Signature:      []byte{},
 		PublicKeyBytes: []byte{},
 	}
-	output := NewTXoutput(Reward, to)
+	output := NewTXoutput(reward, to)
 	Tx := &Transaction{
 		ID:      nil,
 		Inputs:  []TXinput{input},
@@ -39,7 +39,16 @@ func NewCoinbaseTx(to []byte) *Transaction {
 
 // NewTransaction create new transaction
 func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Transaction, error) {
-	// Find enough UTXO from wallet address
+	// check valid address
+	if !IsValidAddress(wallet.address) || !IsValidAddress(to) {
+		return nil, errors.New("wrong address")
+	}
+	// check valid amount
+	if amount <= 0 {
+		return nil, errors.New("wrong amount")
+	}
+
+	// Find enough UTXO from UTXO set by wallet address
 	balance, utxosMap := FindEnoughUTXOFromSet(chain.DataBase, wallet.address, amount)
 	if balance < amount {
 		return nil, errors.New("Not enough balance")
@@ -85,8 +94,8 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Trans
 	return Tx, nil
 }
 
-// VerifyTransaction verify each input of transaction
-func VerifyTransaction(chain *Chain, Tx *Transaction, publicKeyBytes []byte) bool {
+// VerifyTransaction verify each input of transaction before pack a block
+func VerifyTransaction(chain *Chain, Tx *Transaction) bool {
 	// coinbase
 	if Tx.IsCoinBase() == true {
 		return true
@@ -100,14 +109,12 @@ func VerifyTransaction(chain *Chain, Tx *Transaction, publicKeyBytes []byte) boo
 			return false
 		}
 
+		// verify signature
 		signature := input.Signature
-		//preTx := GetPreTransaction(input)
 		message := HashTransaction(preTx)
 		if Verify(Bytes2PublicKey(input.PublicKeyBytes), message, signature) == false {
 			return false
 		}
-		// TODO
-		// avoid double spent locally
 	}
 	return true
 }

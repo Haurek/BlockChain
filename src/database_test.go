@@ -1,4 +1,4 @@
-package BlockChain
+package main
 
 //func TestDatabase(t *testing.T) {
 //	// 配置数据库的一些源信息

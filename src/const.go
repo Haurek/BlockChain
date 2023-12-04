@@ -1,4 +1,4 @@
-package BlockChain
+package main
 
 const (
 	// Block
@@ -7,6 +7,7 @@ const (
 	GenesisData       = "a Genesis Block"
 
 	// Wallet
+	AddressVersion      = 0x00
 	LocalPublicKeyFile  = "./wallet/public_key.pem"
 	LocalPrivateKeyFile = "./wallet/private_key.pem"
 
@@ -20,6 +21,8 @@ const (
 	BlockTable      = "b"
 	ChainStateTable = "c"
 	MaxUTXOSize     = 1024
+	GenesisValue    = 114514
+	MinerReward     = 10
 
 	// Transaction pool
 	MaxTxPoolSize = 1024

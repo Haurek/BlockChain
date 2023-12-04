@@ -1,4 +1,4 @@
-package BlockChain
+package main
 
 import (
 	"bytes"
@@ -106,7 +106,7 @@ func GenerateAddress(publicKeyBytes []byte) []byte {
 	ripemd160HashValue := Ripemd160Hash(keyHash)
 
 	// add version number as prefix
-	versionHash := append([]byte{0x00}, ripemd160HashValue...)
+	versionHash := append([]byte{AddressVersion}, ripemd160HashValue...)
 
 	// calculate checksum
 	checksum := CalculateChecksum(versionHash)
@@ -120,6 +120,15 @@ func GenerateAddress(publicKeyBytes []byte) []byte {
 // Address2PublicKeyHash address to public key hash
 func Address2PublicKeyHash(address []byte) []byte {
 	return Base58Decode(address)
+}
+
+func IsValidAddress(address []byte) bool {
+	// check address version
+	if address[0] != AddressVersion {
+		return false
+	}
+	// check checksum of an address
+	return CheckAddress(address)
 }
 
 // CheckAddress check checksum of an address

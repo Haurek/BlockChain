@@ -1,4 +1,4 @@
-package BlockChain
+package main
 
 // TXinput is transaction input type
 // TxID is previous Tx ID
