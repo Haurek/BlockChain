@@ -3,8 +3,10 @@ module BlockChain
 go 1.21
 
 require (
+	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/libp2p/go-libp2p v0.32.1
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
+	github.com/multiformats/go-multiaddr v0.12.0
 )
 
 require (
@@ -44,7 +46,6 @@ require (
 	github.com/ipfs/go-cid v0.4.1 // indirect
 	github.com/ipfs/go-datastore v0.6.0 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
-	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/ipld/go-ipld-prime v0.20.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
@@ -74,7 +75,6 @@ require (
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
-	github.com/multiformats/go-multiaddr v0.12.0 // indirect
 	github.com/multiformats/go-multiaddr-dns v0.3.1 // indirect
 	github.com/multiformats/go-multiaddr-fmt v0.1.0 // indirect
 	github.com/multiformats/go-multibase v0.2.0 // indirect
