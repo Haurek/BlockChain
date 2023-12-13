@@ -24,9 +24,12 @@ func NewTxPool(net *p2pnet.P2PNet) (*TxPool, error) {
 		pool:    make(map[string]*blockchain.Transaction),
 		network: net,
 	}
-	// register receive callback func
-	net.RegisterCallback(p2pnet.TransactionMsg, pool.OnReceive)
 	return pool, nil
+}
+
+func (tp *TxPool) Run() {
+	// register receive callback func
+	tp.network.RegisterCallback(p2pnet.TransactionMsg, tp.OnReceive)
 }
 
 // AddTransaction add transaction to pool

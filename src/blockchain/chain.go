@@ -6,8 +6,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"os"
 	"sync"
 )
 
@@ -53,19 +51,10 @@ func (iterator *BlockIterator) Next() *Block {
 // address use for genesis block
 func CreateChain(address []byte) *Chain {
 	// create a database
-	_, err := os.Stat(DataBaseFile)
-	if !os.IsNotExist(err) {
-		fmt.Println("Chain database already exists")
-		// load database
-		return LoadChain()
+	db, err := OpenDatabase(DataBasePath)
+	if err != nil {
+		return nil
 	}
-
-	// open database
-	opts := badger.DefaultOptions(DataBasePath)
-	opts.Logger = nil
-	db, err := badger.Open(opts)
-	utils.HandleError(err)
-
 	// Genesis node create GenesisBlock
 	genesisBlock, err := NewGenesisBlock(address)
 	utils.HandleError(err)
@@ -86,18 +75,21 @@ func CreateChain(address []byte) *Chain {
 }
 
 // LoadChain initialize chain from database
-func LoadChain() *Chain {
-	// check chain database exist
-	if _, err := os.Stat(DataBaseFile); os.IsNotExist(err) {
-		fmt.Println("No Chain found")
-		return nil
+func LoadChain(path string) (*Chain, error) {
+	//// check chain database exist
+	//if _, err := os.Stat(path); os.IsNotExist(err) {
+	//	fmt.Println("No Chain found")
+	//	return nil
+	//}
+	//// load local database
+	//opts := badger.DefaultOptions(path)
+	//opts.Logger = nil
+	//db, err := badger.Open(opts)
+	//utils.HandleError(err)
+	db, err := OpenDatabase(path)
+	if err != nil {
+		return nil, err
 	}
-	// load local database
-	opts := badger.DefaultOptions(DataBasePath)
-	opts.Logger = nil
-	db, err := badger.Open(opts)
-	utils.HandleError(err)
-
 	// read tip hash from database
 	latestHash, err := ReadFromDB(db, []byte(BlockTable), []byte(TipHashKey))
 	utils.HandleError(err)
@@ -107,7 +99,7 @@ func LoadChain() *Chain {
 		DataBase: db,
 	}
 
-	return chain
+	return chain, nil
 }
 
 // AddGenesisBlock add genesis block to chain and update UTXO set

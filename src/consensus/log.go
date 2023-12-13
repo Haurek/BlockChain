@@ -6,7 +6,7 @@ import "sync"
 // @param Cap: max size of MsgLog
 // @param Logs: seqnum->entry
 type MsgLog struct {
-	Cap  int
+	Cap  uint64
 	Logs []*logEntry
 	lock sync.Mutex
 }
@@ -14,12 +14,28 @@ type MsgLog struct {
 // logEntry entry of MsgLog
 type logEntry struct {
 	used            bool
-	prepareLog      []*PrepareMessage
-	commitLog       []*CommitMessage
-	checkPointLog   []*CheckPointMessage
+	requestLog      *RequestMessage
+	prePrepareLog   *PrePrepareMessage
+	prepareLog      map[string]*PrepareMessage
+	commitLog       map[string]*CommitMessage
+	checkPointLog   map[string]*CheckPointMessage
 	prepareCount    uint64
 	commitCount     uint64
 	checkPointCount uint64
+	replyCount      uint64
+}
+
+func (entry *logEntry) initEntry() {
+	entry.used = false
+	entry.prepareCount = 0
+	entry.commitCount = 0
+	entry.checkPointCount = 0
+	entry.replyCount = 0
+	entry.prePrepareLog = nil
+	entry.requestLog = nil
+	entry.prepareLog = make(map[string]*PrepareMessage)
+	entry.commitLog = make(map[string]*CommitMessage)
+	entry.checkPointLog = make(map[string]*CheckPointMessage)
 }
 
 func (entry *logEntry) clearEntry() {
@@ -27,23 +43,26 @@ func (entry *logEntry) clearEntry() {
 	entry.prepareCount = 0
 	entry.commitCount = 0
 	entry.checkPointCount = 0
-	entry.prepareLog = make([]*PrepareMessage, 10)
-	entry.commitLog = make([]*CommitMessage, 10)
-	entry.checkPointLog = make([]*CheckPointMessage, 10)
+	entry.replyCount = 0
+	entry.requestLog = nil
+	entry.prePrepareLog = nil
+	clear(entry.prepareLog)
+	clear(entry.commitLog)
+	clear(entry.checkPointLog)
 }
 
-func NewMsgLog(cap int) *MsgLog {
+func NewMsgLog(cap uint64) *MsgLog {
 	log := &MsgLog{
 		Cap:  cap,
 		Logs: make([]*logEntry, cap),
 	}
 	for _, entry := range log.Logs {
-		entry.clearEntry()
+		entry.initEntry()
 	}
 	return log
 }
 
-func (l *MsgLog) AddMessage(seqnum uint64, msg *PBFTMessage) {
+func (l *MsgLog) AddMessage(seqnum uint64, msgType PBFTMsgType, data interface{}) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -51,32 +70,108 @@ func (l *MsgLog) AddMessage(seqnum uint64, msg *PBFTMessage) {
 	if !l.Logs[seqnum].used {
 		l.Logs[seqnum].used = true
 	}
-	data, msgType := msg.SplitMessage()
 	switch msgType {
+	case RequestMsg:
+		if request, ok := data.(RequestMessage); ok {
+			l.Logs[seqnum].requestLog = &request
+		}
+	case PrePrepareMsg:
+		if prePrepare, ok := data.(PrePrepareMessage); ok {
+			l.Logs[seqnum].prePrepareLog = &prePrepare
+		}
 	case PrepareMsg:
 		if prepare, ok := data.(PrepareMessage); ok {
-			l.Logs[seqnum].prepareLog = append(l.Logs[seqnum].prepareLog, &prepare)
+			id := prepare.ReplicaID
+			l.Logs[seqnum].prepareLog[id] = &prepare
 			l.Logs[seqnum].prepareCount++
 		}
 	case CommitMsg:
 		if commit, ok := data.(CommitMessage); ok {
-			l.Logs[seqnum].commitLog = append(l.Logs[seqnum].commitLog, &commit)
+			id := commit.ReplicaID
+			l.Logs[seqnum].commitLog[id] = &commit
 			l.Logs[seqnum].commitCount++
 		}
 	case CheckPointMsg:
 		if checkpoint, ok := data.(CheckPointMessage); ok {
-			l.Logs[seqnum].checkPointLog = append(l.Logs[seqnum].checkPointLog, &checkpoint)
+			id := checkpoint.ReplicaID
+			l.Logs[seqnum].checkPointLog[id] = &checkpoint
 			l.Logs[seqnum].checkPointCount++
+		}
+	case ReplyMsg:
+		if _, ok := data.(ReplyMessage); ok {
+			l.Logs[seqnum].replyCount++
 		}
 	}
 }
 
-func (l *MsgLog) CleanLogs() {
+func (l *MsgLog) HaveLog(seqnum uint64, msgType PBFTMsgType, id string) bool {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	// check entry in used
+	if !l.Logs[seqnum].used {
+		return false
+	}
+	switch msgType {
+	case PrepareMsg:
+		_, ok := l.Logs[seqnum].prepareLog[id]
+		return ok
+	case CommitMsg:
+		_, ok := l.Logs[seqnum].commitLog[id]
+		return ok
+	case CheckPointMsg:
+		_, ok := l.Logs[seqnum].checkPointLog[id]
+		return ok
+	}
+	return false
+}
+
+func (l *MsgLog) GetPrePrepareLog(seqnum uint64) *PrePrepareMessage {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	return l.Logs[seqnum].prePrepareLog
+}
+
+func (l *MsgLog) GetRequestLog(seqnum uint64) *RequestMessage {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	return l.Logs[seqnum].requestLog
+}
+
+func (l *MsgLog) GetPrepareLog(seqnum uint64, id string) *PrepareMessage {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+
+	return l.Logs[seqnum].prepareLog[id]
+}
+
+func (l *MsgLog) GetLogCount(seqnum uint64, msgType PBFTMsgType) uint64 {
+	l.lock.Unlock()
+	defer l.lock.Unlock()
+	if !l.Logs[seqnum].used {
+		return 0
+	}
+	switch msgType {
+	case PrepareMsg:
+		return l.Logs[seqnum].prepareCount
+	case CommitMsg:
+		return l.Logs[seqnum].commitCount
+	case CheckPointMsg:
+		return l.Logs[seqnum].checkPointCount
+	case ReplyMsg:
+		return l.Logs[seqnum].replyCount
+	}
+	return 0
+}
+
+func (l *MsgLog) ClearLogs() {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	// clear all entry
-	for i := 0; i < l.Cap; i++ {
-		l.Logs[i].clearEntry()
+	for _, log := range l.Logs {
+		log.clearEntry()
 	}
 }

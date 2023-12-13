@@ -4,6 +4,7 @@ type PBFTMsgType int32
 
 const (
 	DefaultMsg PBFTMsgType = iota
+	RequestMsg
 	PrePrepareMsg
 	PrepareMsg
 	CommitMsg
@@ -19,13 +20,22 @@ type PBFTMessage struct {
 	Data interface{} `json:"data"`
 }
 
+// RequestMessage primary node proposal new block
+type RequestMessage struct {
+	Timestamp int64  `json:"timestamp"`
+	ClientID  string `json:"clientID"`
+	TxsBytes  []byte `json:"txsBytes"`
+}
+
 // PrePrepareMessage pBFT pre-prepare message
 // @param Msg: is origin data from client request
 type PrePrepareMessage struct {
 	View   uint64 `json:"view"`
 	SeqNum uint64 `json:"seqNum"`
 	Digest []byte `json:"digest"`
-	Msg    []byte `json:"msg"`
+	ReqMsg []byte `json:"reqMsg"`
+	Sign   []byte `json:"sign"`
+	PubKey []byte `json:"pubKey"`
 }
 
 // PrepareMessage pBFT prepare message
@@ -35,6 +45,8 @@ type PrepareMessage struct {
 	SeqNum    uint64 `json:"seqNum"`
 	Digest    []byte `json:"digest"`
 	ReplicaID string `json:"replicaID"`
+	Sign      []byte `json:"sign"`
+	PubKey    []byte `json:"pubKey"`
 }
 
 // CommitMessage pBFT prepare message
@@ -44,11 +56,16 @@ type CommitMessage struct {
 	SeqNum    uint64 `json:"seqNum"`
 	Digest    []byte `json:"digest"`
 	ReplicaID string `json:"replicaID"`
+	Sign      []byte `json:"sign"`
+	PubKey    []byte `json:"pubKey"`
 }
 
-//type ReplyMessage struct {
-//	Generic PBFTMessage
-//}
+type ReplyMessage struct {
+	View      uint64 `json:"view"`
+	Timestamp int64  `json:"timestamp"`
+	ClientID  string `json:"clientID"`
+	ReplicaID string `json:"replicaID"`
+}
 
 // CheckPointMessage send this message when checkpoint condition is met
 // @param ReplicaID: ID of replica peer who send this message
@@ -88,6 +105,17 @@ type NewViewMessage struct {
 // SplitMessage spilt PBFTMessage into the message struct corresponding to its type
 func (m *PBFTMessage) SplitMessage() (interface{}, PBFTMsgType) {
 	switch m.Type {
+	case RequestMsg:
+		data, ok := m.Data.(map[string]interface{})
+		if !ok {
+			return nil, DefaultMsg
+		}
+		reMsg := RequestMessage{
+			Timestamp: int64(data["view"].(float64)),
+			ClientID:  data["clientID"].(string),
+			TxsBytes:  []byte(data["txsBytes"].(string)),
+		}
+		return reMsg, RequestMsg
 	case PrePrepareMsg:
 		data, ok := m.Data.(map[string]interface{})
 		if !ok {
@@ -97,7 +125,9 @@ func (m *PBFTMessage) SplitMessage() (interface{}, PBFTMsgType) {
 			View:   uint64(data["view"].(float64)),
 			SeqNum: uint64(data["seqNum"].(float64)),
 			Digest: []byte(data["digest"].(string)),
-			Msg:    []byte(data["msg"].(string)),
+			ReqMsg: []byte(data["reqMsg"].(string)),
+			Sign:   []byte(data["sign"].(string)),
+			PubKey: []byte(data["pubKey"].(string)),
 		}
 		return ppMsg, PrePrepareMsg
 
@@ -111,6 +141,8 @@ func (m *PBFTMessage) SplitMessage() (interface{}, PBFTMsgType) {
 			SeqNum:    uint64(data["seqNum"].(float64)),
 			Digest:    []byte(data["digest"].(string)),
 			ReplicaID: data["replicaID"].(string),
+			Sign:      []byte(data["sign"].(string)),
+			PubKey:    []byte(data["pubKey"].(string)),
 		}
 		return pMsg, PrepareMsg
 
@@ -124,9 +156,21 @@ func (m *PBFTMessage) SplitMessage() (interface{}, PBFTMsgType) {
 			SeqNum:    uint64(data["seqNum"].(float64)),
 			Digest:    []byte(data["digest"].(string)),
 			ReplicaID: data["replicaID"].(string),
+			Sign:      []byte(data["sign"].(string)),
+			PubKey:    []byte(data["pubKey"].(string)),
 		}
 		return cMsg, CommitMsg
-
+	case ReplyMsg:
+		data, ok := m.Data.(map[string]interface{})
+		if !ok {
+			return nil, DefaultMsg
+		}
+		rMsg := ReplyMessage{
+			View:      uint64(data["view"].(float64)),
+			Timestamp: int64(data["view"].(float64)),
+			ReplicaID: data["replicaID"].(string),
+		}
+		return rMsg, ReplyMsg
 	case CheckPointMsg:
 		data, ok := m.Data.(map[string]interface{})
 		if !ok {

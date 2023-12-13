@@ -66,6 +66,10 @@ func Bytes2PublicKey(publicKeyBytes []byte) *ecdsa.PublicKey {
 	return &ecdsa.PublicKey{elliptic.P256(), x, y}
 }
 
+func PublicKey2Bytes(key *ecdsa.PublicKey) []byte {
+	return elliptic.MarshalCompressed(key.Curve, key.X, key.Y)
+}
+
 func LoadPublicKey(publicKeyPath string) (*ecdsa.PublicKey, error) {
 	publicKeyBytes, err := ioutil.ReadFile(publicKeyPath)
 	if err != nil {

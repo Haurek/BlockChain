@@ -2,7 +2,6 @@ package blockchain
 
 const (
 	// Block
-	Difficulty        = 8
 	MaxTransactionLen = 9
 	GenesisData       = "a Genesis Block"
 

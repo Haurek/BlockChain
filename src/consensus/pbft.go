@@ -4,28 +4,42 @@ import (
 	p2pnet "BlockChain/src/network"
 	"BlockChain/src/pool"
 	"BlockChain/src/state"
+	"crypto/ecdsa"
 	"encoding/json"
 	"sync"
 	"time"
 )
 
 // PBFT type
+// @param fsm: finite-state machine
+// @param log: Message log
+// @param msgQueue: Message queue
+// @param pBFTPeers: peerID -> public key, public key used for verify
+// @param privateKey: used for message sign
+// @param txPool: Transaction Pool
+// @param isStart: pBFT consensus start flag
+// @param isPrimary: primary node flag
+// @param view: current view
 type PBFT struct {
 	fsm              *PBFTFSM
 	log              *MsgLog
 	net              *p2pnet.P2PNet
 	ws               *state.WorldState
 	msgQueue         *MessageQueue
-	replicaPeer      map[string]string
+	pBFTPeers        map[string]*ecdsa.PublicKey
+	primaryID        string
+	selfID           string
+	privateKey       *ecdsa.PrivateKey
+	publicKey        *ecdsa.PublicKey
 	txPool           *pool.TxPool
 	isStart          bool
+	isPrimary        bool
 	view             uint64
-	currentView      uint64
 	stableCheckPoint uint64
-	CheckPoint       uint64
-
-	stateTimeout *time.Timer
-	sync.Mutex
+	checkPoint       uint64
+	maxFaultNode     uint64
+	stateTimeout     *time.Timer
+	lock             sync.Mutex
 }
 
 // MessageQueue queue of message received from network
@@ -57,14 +71,17 @@ func (q *MessageQueue) Dequeue() <-chan *PBFTMessage {
 // NewPBFT create pBFT engine
 func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet) (*PBFT, error) {
 	pbft := &PBFT{
-		fsm:         NewFSM(),
-		log:         NewMsgLog(ws.WaterHead),
-		net:         net,
-		ws:          ws,
-		msgQueue:    NewMessageQueue(),
-		replicaPeer: make(map[string]string),
-		txPool:      txPool,
-		isStart:     false,
+		fsm:       NewFSM(RequestState),
+		log:       NewMsgLog(ws.WaterHead),
+		net:       net,
+		ws:        ws,
+		msgQueue:  NewMessageQueue(),
+		pBFTPeers: make(map[string]*ecdsa.PublicKey),
+		primaryID: ws.PrimaryID,
+		selfID:    net.Host.ID().String(),
+		isPrimary: ws.IsPrimary,
+		txPool:    txPool,
+		isStart:   false,
 	}
 	// initialize from world state
 	// TODO
@@ -100,12 +117,13 @@ func (pbft *PBFT) Run() {
 				continue
 			}
 			// run FSM handle message
-			pbft.fsm.NextState(msg)
+			pbft.NextState(msg)
 		}
 	}
 }
 
-// ProposalBlockRoutine proposal new block when TxPool is full
-func (pbft *PBFT) ProposalBlockRoutine() {
-
+func (pbft *PBFT) AddCheckPoint() {
+	pbft.lock.Lock()
+	defer pbft.lock.Unlock()
+	pbft.checkPoint++
 }

@@ -57,11 +57,11 @@ func CreateWallet() *Wallet {
 	if err != nil {
 		fmt.Println("Error generating key pair:", err)
 	}
-	wallet.InitWallet(publicKey, privateKey)
+	wallet.initWallet(publicKey, privateKey)
 	return wallet
 }
 
-func (wallet *Wallet) InitWallet(publicKey *ecdsa.PublicKey, privateKey *ecdsa.PrivateKey) *Wallet {
+func (wallet *Wallet) initWallet(publicKey *ecdsa.PublicKey, privateKey *ecdsa.PrivateKey) *Wallet {
 	wallet.SetPublicKey(publicKey)
 	wallet.SetPrivateKey(privateKey)
 	wallet.SetAddress(GenerateAddress(wallet.GetPublicKeyBytes()))
@@ -81,7 +81,7 @@ func LoadWallet(publicKeyPath, privateKeyPath string) (*Wallet, error) {
 	}
 
 	wallet := &Wallet{}
-	return wallet.InitWallet(publicKey, privateKey), nil
+	return wallet.initWallet(publicKey, privateKey), nil
 }
 
 // SaveWallet save key pair in file

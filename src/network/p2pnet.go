@@ -21,18 +21,16 @@ import (
 
 var logger = log.Logger("Block Chain")
 
-type addrList []multiaddr.Multiaddr
-
 // RecvHandler receive callback func
 type RecvHandler func(t MessageType, msgBytes []byte, peerID string)
 
 type P2PNet struct {
-	Host             host.Host    // local node host
-	protocol         string       // p2p network protocol
-	rendezvous       string       // rendezvous string
-	bootstrapPeers   addrList     // bootstrap peers address
-	bootstrap        bool         // is bootstrap peer
-	kademliaDHT      *dht.IpfsDHT // KDH table
+	Host             host.Host             // local node host
+	protocol         string                // p2p network protocol
+	rendezvous       string                // rendezvous string
+	bootstrapPeers   []multiaddr.Multiaddr // bootstrap peers address
+	bootstrap        bool                  // is bootstrap peer
+	kademliaDHT      *dht.IpfsDHT          // KDH table
 	routingDiscovery *drouting.RoutingDiscovery
 	sync.RWMutex                                 // lock
 	peerTable        map[string]*P2PStream       // already connect peers
@@ -50,9 +48,9 @@ type P2PStream struct {
 }
 
 // CreateNode create a P2P network Node
-func CreateNode(cfg Config) (*P2PNet, error) {
+func CreateNode(keyPath string, addr string, bootstrap bool, bootstrapPeers []string) (*P2PNet, error) {
 	// load local private key
-	privateKey, err := mycrypto.LoadPrivateKey(cfg.PrivateKey)
+	privateKey, err := mycrypto.LoadPrivateKey(keyPath)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +62,7 @@ func CreateNode(cfg Config) (*P2PNet, error) {
 	ctx := context.Background()
 	host, err := libp2p.New(
 		libp2p.Identity(pri),
-		libp2p.ListenAddrs([]multiaddr.Multiaddr(cfg.ListenAddresses)...),
+		libp2p.ListenAddrStrings(addr),
 	)
 	if err != nil {
 		return nil, err
@@ -77,8 +75,19 @@ func CreateNode(cfg Config) (*P2PNet, error) {
 		peerTable:  make(map[string]*P2PStream),
 	}
 
-	p2pNode.bootstrap = cfg.Bootstrap
-	p2pNode.bootstrapPeers = cfg.BootstrapPeers
+	p2pNode.bootstrap = bootstrap
+	var bootstraps []multiaddr.Multiaddr
+	if len(bootstrapPeers) == 0 {
+		bootstraps = dht.DefaultBootstrapPeers
+	} else {
+		for _, peerAddr := range bootstrapPeers {
+			mAddr, err := multiaddr.NewMultiaddr(peerAddr)
+			if err != nil {
+				return nil, err
+			}
+			bootstraps = append(bootstraps, mAddr)
+		}
+	}
 
 	// Start a DHT, for use in peer discovery
 	kademliaDHT, err := dht.New(ctx, p2pNode.Host)

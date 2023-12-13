@@ -1,6 +1,15 @@
 package blockchain
 
-import "badger"
+import (
+	"badger"
+)
+
+func OpenDatabase(dbPath string) (*badger.DB, error) {
+	opts := badger.DefaultOptions(dbPath)
+	opts.Logger = nil
+	db, err := badger.Open(opts)
+	return db, err
+}
 
 // WriteToDB write key-value to database
 func WriteToDB(db *badger.DB, tablePrefix, key, value []byte) error {
