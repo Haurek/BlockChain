@@ -47,6 +47,31 @@ func (iterator *BlockIterator) Next() *Block {
 	return &currentBlock
 }
 
+// 从区块链中找到高度在范围内的所有区块
+func FindBlocksInRange(chain *Chain, min, max uint64) []*Block {
+	var blocksInRange []*Block
+
+	iter := chain.Iterator()
+	for {
+		block := iter.Next()
+		if block == nil {
+			break
+		}
+
+		if block.Header.Height >= min && block.Header.Height <= max {
+			// 如果区块高度在指定范围内，则将其加入结果列表
+			blocksInRange = append(blocksInRange, block)
+		}
+
+		// 如果当前区块是创世区块，则停止遍历
+		if block.IsGenesisBlock() {
+			break
+		}
+	}
+
+	return blocksInRange
+}
+
 // CreateChain create a new chain
 // address use for genesis block
 func CreateChain(address []byte) *Chain {

@@ -4,6 +4,7 @@ import (
 	"BlockChain/src/blockchain"
 	p2pnet "BlockChain/src/network"
 	"BlockChain/src/state"
+	"BlockChain/src/utils"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -140,27 +141,80 @@ func (bp *BlockPool) BlockSynchronization() {
 			case BlockRequestMsg:
 				// handle block request
 				// 从区块链数据库取出请求的区块
-				// TODO
+				if requestedBlock, ok := msg.(BlockRequestMessage); ok {
+					blocksInRange := blockchain.FindBlocksInRange(bp.chain, requestedBlock.Min, requestedBlock.Max)
+					for _, block := range blocksInRange {
+						serializedData, err := utils.Serialize(block)
+						utils.HandleError(err)
+						blockResMsg := BlockResponseMessage{
+							FromID: bp.ws.SelfID,
+							ToID:   requestedBlock.NodeID,
+							Height: block.Header.Height,
+							Hash:   block.Header.Hash,
+							Block:  serializedData,
+						}
+						blockMsg = BlockMessage{
+							Type: BlockResponseMsg,
+							Data: blockResMsg,
+						}
+						data, err = json.Marshal(blockMsg)
+						if err != nil {
+							return
+						}
+						p2pMsg = p2pnet.Message{
+							Type: p2pnet.BlockMsg,
+							Data: data,
+						}
+						bp.network.BroadcastToPeer(&p2pMsg, requestedBlock.NodeID)
+					}
+				}
+
 				// 发送 BlockResponseMessage 消息回复请求方
-				// TODO
 
 			case BlockResponseMsg:
 				// handle block response
 				// 取出BlockResponseMessage中的区块信息
-				// TODO
-				// 判断收到的区块是否可直接加入区块链，可以则直接插入
-				// TODO
-				// 插入后遍历区块池判断是否可以继续插入区块
-				bp.Reindex()
-				// 无法插入的区块链则暂时加入区块池BlockPool
-				// TODO
+				if response, ok := msg.(BlockResponseMessage); ok {
+					// 判断收到的区块是否可直接加入区块链，可以则直接插入
+					var block blockchain.Block
+					err = utils.Deserialize(response.Block, &block)
+					utils.HandleError(err)
+					if !(bp.chain.AddBlock(&block)) {
+						bp.Reindex()
+						// 无法插入的区块链则暂时加入区块池BlockPool
+						bp.AddBlock(&block)
+					}
+
+				}
 			default:
 
 			}
 		case <-syncTimer.C:
 			// 计时器判断同步请求是否完成
 			// 请求完成，开始向拥有最长链的节点发送BlockRequestMessage消息请求区块
-			// TODO
+			if bp.peerBestHeight > bp.chain.BestHeight {
+				blockReqMsg := BlockRequestMessage{
+					NodeID: bp.ws.SelfID,
+					Min:    bp.chain.BestHeight + 1,
+					Max:    bp.peerBestHeight,
+				}
+				blockMsg = BlockMessage{
+					Type: BlockRequestMsg,
+					Data: blockReqMsg,
+				}
+				data, err = json.Marshal(blockMsg)
+				if err != nil {
+					return
+				}
+				p2pMsg = p2pnet.Message{
+					Type: p2pnet.BlockMsg,
+					Data: data,
+				}
+				bp.network.BroadcastToPeer(&p2pMsg, bp.bestPeerID)
+			} else {
+				// 请求未完成，重新设置计时器
+				syncTimer.Reset(10 * time.Second)
+			}
 		}
 	}
 }
@@ -177,7 +231,6 @@ func (bp *BlockPool) AddBlock(block *blockchain.Block) {
 }
 
 func (bp *BlockPool) Reindex() {
-	// TODO
 }
 
 // GetBlock get block from pool by hash
