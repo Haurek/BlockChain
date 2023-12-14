@@ -4,9 +4,9 @@ import "bytes"
 
 // TXoutput is UTXO output type
 type TXoutput struct {
-	Value         int
-	ToAddress     []byte
-	PublicKeyHash []byte
+	Value         int    `json:"value"`
+	ToAddress     []byte `json:"toAddress"`
+	PublicKeyHash []byte `json:"publicKeyHash"`
 }
 
 // NewTXoutput create new transaction output

@@ -4,11 +4,11 @@ package blockchain
 // TxID is previous Tx ID
 // Index is the index of output corresponding to the input
 type TXinput struct {
-	TxID           []byte
-	Index          int
-	FromAddress    []byte
-	Signature      []byte
-	PublicKeyBytes []byte
+	TxID           []byte `json:"txID"`
+	Index          int    `json:"index"`
+	FromAddress    []byte `json:"fromAddress"`
+	Signature      []byte `json:"signature"`
+	PublicKeyBytes []byte `json:"publicKeyBytes"`
 }
 
 // NewTXinput create new transaction input

@@ -2,9 +2,7 @@ package blockchain
 
 import (
 	"BlockChain/src/utils"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -20,22 +18,23 @@ type BlockHeader struct {
 	Timestamp int64
 	Hash      []byte
 	PrevHash  []byte
+	Height    uint64
 	//MerkleRoot []byte
 }
 
 // NewBlock create a new block
-func NewBlock(preHash []byte, Txs []*Transaction) *Block {
+func NewBlock(preHash []byte, Txs []*Transaction, height uint64) *Block {
 	// create header
 	header := &BlockHeader{}
 	header.Timestamp = time.Now().Unix()
 	header.PrevHash = preHash
 	header.Hash = []byte{}
-
+	header.Height = height
 	// Serialize Transactions
 	//var TxsBytes [][]byte
 	//for _, Tx := range Txs {
-	//	TxBytes, err := Serialize(Tx)
-	//	HandleError(err)
+	//	TxBytes, err := utils.Serialize(Tx)
+	//	utils.HandleError(err)
 	//	TxsBytes = append(TxsBytes, TxBytes)
 	//}
 
@@ -74,6 +73,7 @@ func NewGenesisBlock(address []byte) (*Block, error) {
 	header.Timestamp = time.Now().Unix()
 	header.PrevHash = []byte{}
 	header.Hash = []byte{}
+	header.Height = 0
 	genesisTx := NewCoinbaseTx(address, GenesisValue)
 
 	//// Serialize Transactions
@@ -100,16 +100,5 @@ func NewGenesisBlock(address []byte) (*Block, error) {
 
 // IsGenesisBlock check if the block is genesis block
 func (block *Block) IsGenesisBlock() bool {
-	return len(block.Header.PrevHash) == 0
-}
-
-// Show block message
-func (block *Block) Show() {
-	fmt.Println("Block head:")
-	fmt.Println("	Hash: ", hex.EncodeToString(block.Header.Hash))
-	fmt.Println("	previous Hash: ", hex.EncodeToString(block.Header.Hash))
-	fmt.Println("	Time: ", time.Unix(block.Header.Timestamp, 0))
-	//fmt.Println("	MerkleTree Root: ", hex.EncodeToString(block.Header.MerkleRoot))
-	fmt.Println("Transactions:")
-	// TODO
+	return block.Header.Height == 0
 }

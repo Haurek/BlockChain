@@ -12,7 +12,7 @@ import (
 // Chain type
 type Chain struct {
 	Tip        []byte
-	BestHeight int
+	BestHeight uint64
 	DataBase   *badger.DB
 	Lock       sync.Mutex
 }
@@ -76,16 +76,6 @@ func CreateChain(address []byte) *Chain {
 
 // LoadChain initialize chain from database
 func LoadChain(path string) (*Chain, error) {
-	//// check chain database exist
-	//if _, err := os.Stat(path); os.IsNotExist(err) {
-	//	fmt.Println("No Chain found")
-	//	return nil
-	//}
-	//// load local database
-	//opts := badger.DefaultOptions(path)
-	//opts.Logger = nil
-	//db, err := badger.Open(opts)
-	//utils.HandleError(err)
 	db, err := OpenDatabase(path)
 	if err != nil {
 		return nil, err
@@ -93,10 +83,17 @@ func LoadChain(path string) (*Chain, error) {
 	// read tip hash from database
 	latestHash, err := ReadFromDB(db, []byte(BlockTable), []byte(TipHashKey))
 	utils.HandleError(err)
-
+	// get best height
+	serializeData, err := ReadFromDB(db, []byte(BlockTable), latestHash)
+	var heightBlock Block
+	err = utils.Deserialize(serializeData, &heightBlock)
+	if err != nil {
+		return nil, err
+	}
 	chain := &Chain{
-		Tip:      latestHash,
-		DataBase: db,
+		Tip:        latestHash,
+		BestHeight: heightBlock.Header.Height,
+		DataBase:   db,
 	}
 
 	return chain, nil

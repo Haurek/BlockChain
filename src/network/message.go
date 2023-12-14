@@ -14,9 +14,9 @@ type MessageType uint8
 
 // message received handler type
 const (
-	BlockMsg       MessageType = 0x00
-	TransactionMsg MessageType = 0x01
-	ConsensusMsg   MessageType = 0x02
+	BlockMsg MessageType = iota
+	TransactionMsg
+	ConsensusMsg
 )
 
 // Message Generic message type, transmission in P2P network

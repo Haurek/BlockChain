@@ -8,6 +8,7 @@ import (
 	"BlockChain/src/state"
 	"BlockChain/src/utils"
 	"encoding/json"
+	"time"
 )
 
 type Client struct {
@@ -17,6 +18,7 @@ type Client struct {
 	worldState *state.WorldState
 	wallet     *blockchain.Wallet
 	txPool     *pool.TxPool
+	config     *Config
 }
 
 // CreateClient create a new client
@@ -29,8 +31,6 @@ func CreateClient(config *Config) (*Client, error) {
 		// create new wallet
 		wallet.SaveWallet(config.WalletCfg.PubKeyPath, config.WalletCfg.PriKeyPath)
 	}
-	// initialize the world state
-	ws := state.NewWorldState()
 
 	// initialize the chain
 	chain, err := blockchain.LoadChain(config.ChainCfg.ChainDataBasePath)
@@ -50,8 +50,20 @@ func CreateClient(config *Config) (*Client, error) {
 		return nil, err
 	}
 
+	// initialize the world state
+	ws := &state.WorldState{
+		BlockHeight:  chain.BestHeight,
+		Tip:          chain.Tip,
+		IsPrimary:    config.PBFTCfg.IsPrimary,
+		SelfID:       net.Host.ID().String(),
+		View:         config.PBFTCfg.View,
+		CheckPoint:   chain.BestHeight,
+		WaterHead:    config.PBFTCfg.WaterHead,
+		MaxFaultNode: config.PBFTCfg.MaxFaultNode,
+	}
+
 	// initialize the consensus
-	pbft, err := consensus.NewPBFT(ws, txPool, net)
+	pbft, err := consensus.NewPBFT(ws, txPool, net, chain)
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +73,7 @@ func CreateClient(config *Config) (*Client, error) {
 		consensus: pbft,
 		wallet:    wallet,
 		txPool:    txPool,
+		config:    config,
 	}
 	return client, nil
 }
@@ -73,6 +86,8 @@ func (c *Client) Run() error {
 	go c.consensus.Run()
 	// run transaction pool
 	go c.txPool.Run()
+	// start block sync
+
 	return nil
 }
 
@@ -115,11 +130,50 @@ func (c *Client) GetBalance() {
 // ProposalNewBlock proposal new block when TxPool is full
 func (c *Client) ProposalNewBlock() {
 	// check TxPool
+	if c.txPool.Count() == 0 {
+		// tx pool is empty
+		return
+	}
 
 	// get Tx from TxPool and verify Tx
-
+	txs := c.txPool.GetTransactions()
+	var packTxs []*blockchain.Transaction
+	count := 0
+	for id, tx := range txs {
+		if !blockchain.VerifyTransaction(c.chain, tx) {
+			// transaction is invalid
+			c.txPool.RemoveTransaction(id)
+			continue
+		}
+		packTxs = append(packTxs, tx)
+		count++
+		if count == c.config.ChainCfg.MaxTxPerBlock {
+			break
+		}
+	}
 	// pack TxsBytes into Request message
+	txBytes, err := json.Marshal(packTxs)
+	if err != nil {
+		return
+	}
+	reqMsg := consensus.RequestMessage{
+		Timestamp: time.Now().Unix(),
+		ClientID:  c.worldState.SelfID,
+		TxsBytes:  txBytes,
+	}
+	pbftMessage := consensus.PBFTMessage{
+		Type: consensus.RequestMsg,
+		Data: reqMsg,
+	}
+	serialized, err := json.Marshal(pbftMessage)
+	if err != nil {
+		return
+	}
+	p2pMsg := p2pnet.Message{
+		Type: p2pnet.ConsensusMsg,
+		Data: serialized,
+	}
 
 	// send request message to primary node
-
+	c.network.BroadcastToPeer(&p2pMsg, c.worldState.PrimaryID)
 }

@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"BlockChain/src/blockchain"
 	"BlockChain/src/mycrypto"
 	p2pnet "BlockChain/src/network"
 	"BlockChain/src/utils"
@@ -46,10 +47,17 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 		// receive RequestMessage
 		if request, ok := data.(RequestMessage); ok {
 			if pbft.isPrimary {
-
 				// verify Txs
-				// TODO
-
+				var txs []*blockchain.Transaction
+				err := json.Unmarshal(request.TxsBytes, &txs)
+				if err != nil {
+					return
+				}
+				for _, tx := range txs {
+					if !blockchain.VerifyTransaction(pbft.chain, tx) {
+						return
+					}
+				}
 				// receive a request, add current seqNum
 				pbft.AddCheckPoint()
 				// generate digest
@@ -122,7 +130,19 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 			pubKey := mycrypto.Bytes2PublicKey(preprepare.PubKey)
 			digest := utils.Sha256Hash(preprepare.ReqMsg)
 			// verify Txs
-			// TODO
+			reqByte := preprepare.ReqMsg
+			var request RequestMessage
+			err := json.Unmarshal(reqByte, &request)
+			var txs []*blockchain.Transaction
+			err = json.Unmarshal(request.TxsBytes, &txs)
+			if err != nil {
+				return
+			}
+			for _, tx := range txs {
+				if !blockchain.VerifyTransaction(pbft.chain, tx) {
+					return
+				}
+			}
 			if bytes.Equal(digest, preprepare.Digest) == false {
 				// check digest fail
 				return

@@ -10,9 +10,9 @@ import (
 
 // Transaction include inputs and outputs
 type Transaction struct {
-	ID      []byte
-	Inputs  []TXinput
-	Outputs []TXoutput
+	ID      []byte     `json:"ID"`
+	Inputs  []TXinput  `json:"Inputs"`
+	Outputs []TXoutput `json:"Outputs"`
 }
 
 // IsCoinBase check coinbase transaction

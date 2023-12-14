@@ -3,7 +3,9 @@ package pool
 import (
 	"BlockChain/src/blockchain"
 	"BlockChain/src/network"
+	"BlockChain/src/utils"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"sync"
 )
@@ -68,10 +70,51 @@ func (tp *TxPool) RemoveTransaction(id string) {
 	}
 }
 
+func (tp *TxPool) HaveTransaction(id string) bool {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+
+	_, exists := tp.pool[id]
+	return exists
+}
+
 // Count transaction num in pool
 func (tp *TxPool) Count() int {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 
 	return len(tp.pool)
+}
+
+// OnReceive handle transaction message receive from peer
+func (tp *TxPool) OnReceive(t p2pnet.MessageType, msgBytes []byte, peerID string) {
+	if t != p2pnet.TransactionMsg {
+		return
+	}
+	var txMsg TxMessage
+	err := json.Unmarshal(msgBytes, &txMsg)
+	if err != nil {
+		return
+	}
+	switch txMsg.Type {
+	case SendTxMsg:
+		var tx blockchain.Transaction
+		err = utils.Deserialize(txMsg.TxBytes, &tx)
+		if err != nil {
+			return
+		}
+		// add tx to pool
+		if tp.HaveTransaction(hex.EncodeToString(tx.ID[:])) {
+			return
+		}
+		tp.AddTransaction(&tx)
+		// broadcast to other peers
+		msg := &p2pnet.Message{
+			Type: p2pnet.TransactionMsg,
+			Data: msgBytes,
+		}
+		tp.network.BroadcastExceptPeer(msg, peerID)
+	default:
+		return
+	}
 }

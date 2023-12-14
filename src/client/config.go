@@ -15,6 +15,7 @@ type WalletCfg struct {
 
 type ChainCfg struct {
 	ChainDataBasePath string `json:"chainDataBasePath"`
+	MaxTxPerBlock     int    `json:"maxTxPerBlock"`
 }
 
 type P2PNetCfg struct {
@@ -24,10 +25,18 @@ type P2PNetCfg struct {
 	ListenAddr     string   `json:"listenAddr"`
 }
 
+type PBFTCfg struct {
+	IsPrimary    bool   `json:"isPrimary"`
+	View         uint64 `json:"view"`
+	WaterHead    uint64 `json:"waterHead"`
+	MaxFaultNode int    `json:"maxFaultNode"`
+}
+
 type Config struct {
 	WalletCfg `json:"walletCfg"`
 	ChainCfg  `json:"chainCfg"`
 	P2PNetCfg `json:"p2PNetCfg"`
+	PBFTCfg   `json:"PBFTCfg"`
 }
 
 func LoadConfig(file string) (*Config, error) {
@@ -70,11 +79,18 @@ func DefaultConfig() (*Config, error) {
 		},
 		ChainCfg{
 			ChainDataBasePath: "../database/chain_data",
+			MaxTxPerBlock:     9,
 		},
 		P2PNetCfg{
 			BootstrapPeers: []string{},
 			PriKeyPath:     "../wallet/private_key.pem",
 			Bootstrap:      false,
+		},
+		PBFTCfg{
+			IsPrimary:    false,
+			View:         0,
+			WaterHead:    3,
+			MaxFaultNode: 1,
 		},
 	}, nil
 }

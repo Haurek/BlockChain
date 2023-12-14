@@ -1,155 +1,28 @@
 # BlockChian design
 
-## 基础功能
+## 共识层
 
-### P2P网络
+共识层处理节点向主节点发送打包区块请求到区块加入区块链的整个过程，整个过程包括：
 
-- 节点创建
-- 节点发现
-- 添加新交易到待处理池
-- 提交区块到共识过程
-- 获取特定交易或区块的信息
-- 执行节点之间的同步操作(一致性)
+1. 客户端（区块链中的一个节点，不是主节点）通过**命令行**向主节点发起一个打包区块请求，发送RequestMessage到主节点，其中包括要打包交易的数据
+2. 主节点接收消息后对交易进行验证，成功后广播给Pre-prepareMessage，然后进入Prepare状态等待其他节点广播的Prepare消息；客户端节点不参与共识过程，进入Reply阶段等待其他节点的回复
 
+## 区块链层
 
 
-### 存储
 
-数据库？
+## 网络层
 
+libp2p框架下实现的P2P网络，网络间传递的消息类型`message.go/Message struct`，封装消息类型和具体的高层消息
 
+消息类型：
 
-### 共识机制
+```
+const (
+	BlockMsg       MessageType = iota // 区块链同步和区块广播消息
+	TransactionMsg // 交易广播消息
+	ConsensusMsg  // 共识层消息
+)
+```
 
-PBFT--拜占庭问题
-
-PoW
-
-
-
-### 节点和链数据结构
-
-**blockNode**
-
-~~~Go
-type blockNode struct {
-	parent *blockNode
-	hash []byte
-	height int32
-    
-	// header
-	version    int32
-	bits       uint32
-	nonce      uint32
-	timestamp  int64
-	merkleRoot []byte
-
-	status blockStatus
-}
-~~~
-
-
-
-区块体：
-
-- Transactions
-
-
-
-**chain**
-
-- nodes
-
-
-
-
-
-### 密码模块
-
-ECDSA
-
-非对称加密
-
-数字签名和验证
-
-
-
-**地址**
-
-由公钥生成，生成方式参考课程ppt
-
-**钱包**
-
-钱包只是一个密钥对，保存公钥和私钥，一个地址对应一个钱包
-
-
-
-
-### UTXO
-
-没有余额，每笔交易由至少一个输入和一个输出组成，一个新的交易的输入来自之前一笔交易的输出，某个地址所有未被引用的输出就是该地址的余额
-
-UTXO输出：
-
-- index：在一个Transaction中的序号
-
-- value：包含的价值
-- 输出地址
-
-UTXO输入：
-
-- index：在一个Transaction中的序号
-- 签名
-- 公钥
-- 输入地址
-
-- ID：所属的Transaction对应的ID，可用于区块链上查找所属的区块
-
-公钥和地址确保公钥的完整性，因为地址由公钥生成
-
-签名和公钥验证输入属于发送方
-
-发送方查找区块链中所有Transaction，找到其中未花费
-
-Transaction：
-
-- ID：交易的hash摘要
-- Inputs：所有输入
-- Outputs：所有输出
-
-// TODO
-
-每个节点在本地维护区块链中的UTXO(未花费输出集合)，==数据库中加一张表？==
-
-Option:
-
-6次确定，解决双花问题
-
-
-
-**coinbase**：只有输出没有输入，用于创世区块发行货币以及矿工挖矿奖励
-
-reward是矿工挖矿的奖励，是coinbase类型，只有一个输出，其中包含矿工公钥hash
-
-每笔交易由输入和输出组成，保存在Transaction数据结构，作为区块的区块体
-
-余额计算只需要计算所有自己能解锁的UTXO输出value之和
-
-
-
-### PoW
-
-Hashcush：
-
-SHA256(data+counter)值前n个是0，n是挖矿难度，counter从0开始递增
-
-矿工节点维护一个mempool，保存从P2P网络中接收的Transactions，从中获取Transactions并打包成区块
-
-
-
-### client
-
-
-
-### log
-
+消息处理过程：`handler.go/handleStream()`函数中通过线程`recvData`和`sendData`处理两个节点间的消息接收和发送，接收的消息根据其消息类型调用对应的回调函数处理

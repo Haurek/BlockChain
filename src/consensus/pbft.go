@@ -1,13 +1,13 @@
 package consensus
 
 import (
+	"BlockChain/src/blockchain"
 	p2pnet "BlockChain/src/network"
 	"BlockChain/src/pool"
 	"BlockChain/src/state"
 	"crypto/ecdsa"
 	"encoding/json"
 	"sync"
-	"time"
 )
 
 // PBFT type
@@ -21,24 +21,24 @@ import (
 // @param isPrimary: primary node flag
 // @param view: current view
 type PBFT struct {
-	fsm              *PBFTFSM
-	log              *MsgLog
-	net              *p2pnet.P2PNet
-	ws               *state.WorldState
-	msgQueue         *MessageQueue
-	pBFTPeers        map[string]*ecdsa.PublicKey
+	fsm      *PBFTFSM
+	log      *MsgLog
+	net      *p2pnet.P2PNet
+	ws       *state.WorldState
+	msgQueue *MessageQueue
+	//pBFTPeers        map[string]*ecdsa.PublicKey
 	primaryID        string
 	selfID           string
 	privateKey       *ecdsa.PrivateKey
 	publicKey        *ecdsa.PublicKey
 	txPool           *pool.TxPool
+	chain            *blockchain.Chain
 	isStart          bool
 	isPrimary        bool
 	view             uint64
 	stableCheckPoint uint64
 	checkPoint       uint64
 	maxFaultNode     uint64
-	stateTimeout     *time.Timer
 	lock             sync.Mutex
 }
 
@@ -69,22 +69,28 @@ func (q *MessageQueue) Dequeue() <-chan *PBFTMessage {
 }
 
 // NewPBFT create pBFT engine
-func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet) (*PBFT, error) {
+func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet, chain *blockchain.Chain) (*PBFT, error) {
+	var fsm *PBFTFSM
+	if ws.IsPrimary {
+		fsm = NewFSM(RequestState)
+	} else {
+		fsm = NewFSM(PrePrepareState)
+	}
 	pbft := &PBFT{
-		fsm:       NewFSM(RequestState),
-		log:       NewMsgLog(ws.WaterHead),
-		net:       net,
-		ws:        ws,
-		msgQueue:  NewMessageQueue(),
-		pBFTPeers: make(map[string]*ecdsa.PublicKey),
+		fsm:      fsm,
+		log:      NewMsgLog(ws.WaterHead),
+		net:      net,
+		ws:       ws,
+		msgQueue: NewMessageQueue(),
+		//pBFTPeers: make(map[string]*ecdsa.PublicKey),
 		primaryID: ws.PrimaryID,
 		selfID:    net.Host.ID().String(),
 		isPrimary: ws.IsPrimary,
 		txPool:    txPool,
+		chain:     chain,
 		isStart:   false,
 	}
-	// initialize from world state
-	// TODO
+
 	return pbft, nil
 }
 
@@ -105,6 +111,7 @@ func (pbft *PBFT) OnReceive(t p2pnet.MessageType, msgBytes []byte, peerID string
 }
 
 func (pbft *PBFT) Run() {
+	pbft.isStart = true
 	// register callback func
 	pbft.net.RegisterCallback(p2pnet.ConsensusMsg, pbft.OnReceive)
 
@@ -120,6 +127,18 @@ func (pbft *PBFT) Run() {
 			pbft.NextState(msg)
 		}
 	}
+}
+
+func (pbft *PBFT) Start() {
+	pbft.lock.Lock()
+	defer pbft.lock.Unlock()
+	pbft.isStart = true
+}
+
+func (pbft *PBFT) Stop() {
+	pbft.lock.Lock()
+	defer pbft.lock.Unlock()
+	pbft.isStart = false
 }
 
 func (pbft *PBFT) AddCheckPoint() {
