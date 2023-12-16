@@ -5,14 +5,16 @@ import (
 	p2pnet "BlockChain/src/network"
 	"BlockChain/src/pool"
 	"BlockChain/src/state"
+	"BlockChain/src/utils"
 	"crypto/ecdsa"
 	"encoding/json"
+	"log"
 	"sync"
 )
 
 // PBFT type
 // @param fsm: finite-state machine
-// @param log: Message log
+// @param msgLog: Message msgLog
 // @param msgQueue: Message queue
 // @param pBFTPeers: peerID -> public key, public key used for verify
 // @param privateKey: used for message sign
@@ -21,12 +23,11 @@ import (
 // @param isPrimary: primary node flag
 // @param view: current view
 type PBFT struct {
-	fsm      *PBFTFSM
-	log      *MsgLog
-	net      *p2pnet.P2PNet
-	ws       *state.WorldState
-	msgQueue *MessageQueue
-	//pBFTPeers        map[string]*ecdsa.PublicKey
+	fsm              *PBFTFSM
+	msgLog           *MsgLog
+	net              *p2pnet.P2PNet
+	ws               *state.WorldState
+	msgQueue         *MessageQueue
 	primaryID        string
 	selfID           string
 	privateKey       *ecdsa.PrivateKey
@@ -40,6 +41,7 @@ type PBFT struct {
 	checkPoint       uint64
 	maxFaultNode     uint64
 	lock             sync.Mutex
+	log              *log.Logger
 }
 
 // MessageQueue queue of message received from network
@@ -69,7 +71,10 @@ func (q *MessageQueue) Dequeue() <-chan *PBFTMessage {
 }
 
 // NewPBFT create pBFT engine
-func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet, chain *blockchain.Chain) (*PBFT, error) {
+func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet, chain *blockchain.Chain, logPath string) (*PBFT, error) {
+	// initialize logger
+	l := utils.NewLogger("[pbft] ", logPath)
+
 	var fsm *PBFTFSM
 	if ws.IsPrimary {
 		fsm = NewFSM(RequestState)
@@ -78,7 +83,7 @@ func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet, chai
 	}
 	pbft := &PBFT{
 		fsm:      fsm,
-		log:      NewMsgLog(ws.WaterHead),
+		msgLog:   NewMsgLog(ws.WaterHead),
 		net:      net,
 		ws:       ws,
 		msgQueue: NewMessageQueue(),
@@ -89,6 +94,7 @@ func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet, chai
 		txPool:    txPool,
 		chain:     chain,
 		isStart:   false,
+		log:       l,
 	}
 
 	return pbft, nil

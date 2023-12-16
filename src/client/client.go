@@ -7,88 +7,149 @@ import (
 	"BlockChain/src/pool"
 	"BlockChain/src/state"
 	"BlockChain/src/utils"
+	"bufio"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
 type Client struct {
-	chain      *blockchain.Chain
-	network    *p2pnet.P2PNet
-	consensus  *consensus.PBFT
-	worldState *state.WorldState
-	wallet     *blockchain.Wallet
-	txPool     *pool.TxPool
-	config     *Config
+	chain         *blockchain.Chain
+	network       *p2pnet.P2PNet
+	consensus     *consensus.PBFT
+	worldState    *state.WorldState
+	wallet        *blockchain.Wallet
+	txPool        *pool.TxPool
+	blockPool     *pool.BlockPool
+	config        *Config
+	log           *log.Logger
+	startNodeDone chan struct{}
 }
 
 // CreateClient create a new client
-func CreateClient(config *Config) (*Client, error) {
-	// create wallet
-	var wallet *blockchain.Wallet
-	if wallet, err := blockchain.LoadWallet(config.WalletCfg.PubKeyPath, config.WalletCfg.PriKeyPath); err != nil {
-		// load wallet fail
-		wallet = blockchain.CreateWallet()
-		// create new wallet
-		wallet.SaveWallet(config.WalletCfg.PubKeyPath, config.WalletCfg.PriKeyPath)
-	}
-
-	// initialize the chain
-	chain, err := blockchain.LoadChain(config.ChainCfg.ChainDataBasePath)
-	if err != nil {
-		return nil, err
-	}
+func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*Client, error) {
+	// initialize log
+	l := utils.NewLogger("[client] ", config.ClientCfg.LogPath)
 
 	// initialize the network
-	net, err := p2pnet.CreateNode(config.P2PNetCfg.PriKeyPath, config.P2PNetCfg.ListenAddr, config.P2PNetCfg.Bootstrap, config.P2PNetCfg.BootstrapPeers)
-	if err != nil {
-		return nil, err
-	}
+	net := p2pnet.CreateNode(config.P2PNetCfg.PriKeyPath, config.P2PNetCfg.ListenAddr, config.P2PNetCfg.Bootstrap, config.P2PNetCfg.BootstrapPeers, config.P2PNetCfg.LogPath)
 
 	// initialize TxPool
-	txPool, err := pool.NewTxPool(net)
-	if err != nil {
-		return nil, err
-	}
+	txPool := pool.NewTxPool(net, config.TxPoolCfg.LogPath)
 
 	// initialize the world state
 	ws := &state.WorldState{
-		BlockHeight:  chain.BestHeight,
-		Tip:          chain.Tip,
+		BlockHeight:  c.BestHeight,
+		Tip:          c.Tip,
 		IsPrimary:    config.PBFTCfg.IsPrimary,
 		SelfID:       net.Host.ID().String(),
 		View:         config.PBFTCfg.View,
-		CheckPoint:   chain.BestHeight,
+		CheckPoint:   c.BestHeight,
 		WaterHead:    config.PBFTCfg.WaterHead,
 		MaxFaultNode: config.PBFTCfg.MaxFaultNode,
 	}
+	// initialize BlockPool
+	blockPool := pool.NewBlockPool(net, c, ws, config.BlockPoolCfg.LogPath)
 
 	// initialize the consensus
-	pbft, err := consensus.NewPBFT(ws, txPool, net, chain)
+	pbft, err := consensus.NewPBFT(ws, txPool, net, c, config.PBFTCfg.LogPath)
 	if err != nil {
+		l.Panic("Initialize pBFT consensus fail")
 		return nil, err
 	}
 	client := &Client{
-		chain:     chain,
-		network:   net,
-		consensus: pbft,
-		wallet:    wallet,
-		txPool:    txPool,
-		config:    config,
+		chain:         c,
+		network:       net,
+		consensus:     pbft,
+		wallet:        w,
+		txPool:        txPool,
+		blockPool:     blockPool,
+		config:        config,
+		log:           l,
+		startNodeDone: make(chan struct{}),
 	}
 	return client, nil
 }
 
 // Run the client
-func (c *Client) Run() error {
+func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 	// run p2p net
-	go c.network.StartNode()
-	// run pBFT consensus
-	go c.consensus.Run()
-	// run transaction pool
-	go c.txPool.Run()
-	// start block sync
+	c.log.Println("Run p2p net")
+	go c.network.StartNode(c.startNodeDone)
+	<-c.startNodeDone
 
-	return nil
+	fmt.Println("start pbft")
+	// run pBFT consensus
+	c.log.Println("Run pBFT consensus")
+	go c.consensus.Run()
+
+	fmt.Println("start txpool")
+	// run transaction pool
+	c.log.Println("Run Transaction Pool")
+	go c.txPool.Run()
+
+	// start block sync
+	c.log.Println("Run Block Pool")
+	go c.blockPool.Run()
+
+	var cmd string
+	defer wg.Done()
+	for {
+		fmt.Println("Please input your command:")
+		var input string
+		scanner := bufio.NewScanner(os.Stdin)
+		if scanner.Scan() {
+			input = scanner.Text()
+		}
+
+		// 将输入字符串按空格拆分为命令和参数
+		parts := strings.Fields(input)
+		if len(parts) == 0 {
+			c.Usages()
+		} else {
+			cmd = parts[0]
+			switch cmd {
+			case "exit":
+			case "q":
+				close(exitChan)
+				return nil
+			case "help":
+			case "h":
+				c.Usages()
+			case "balance":
+			case "b":
+				// TODO
+				fmt.Printf("Your balance: %d\n", c.GetBalance())
+			case "request":
+			case "r":
+				c.ProposalNewBlock()
+			case "address":
+				fmt.Println(hex.EncodeToString(c.wallet.GetAddress()))
+			case "transaction":
+			case "tx":
+				if len(parts) == 3 {
+					amount, err := strconv.Atoi(parts[1])
+					if err != nil {
+						fmt.Println("wrong amount")
+					} else if toAddress, err := hex.DecodeString(parts[2]); err != nil {
+						fmt.Println("wrong address")
+					} else {
+						c.CreateTransaction(amount, toAddress)
+					}
+				} else {
+					fmt.Println("Please input address and amount")
+				}
+			default:
+				fmt.Println("Unknown command, use \"help\" or \"h\" for usage")
+			}
+		}
+	}
 }
 
 // CreateTransaction create a transaction and broadcast to peers
@@ -123,8 +184,9 @@ func (c *Client) CreateTransaction(amount int, to []byte) {
 }
 
 // GetBalance get balance of the client
-func (c *Client) GetBalance() {
+func (c *Client) GetBalance() int {
 	// TODO
+	return 0
 }
 
 // ProposalNewBlock proposal new block when TxPool is full
@@ -176,4 +238,10 @@ func (c *Client) ProposalNewBlock() {
 
 	// send request message to primary node
 	c.network.BroadcastToPeer(&p2pMsg, c.worldState.PrimaryID)
+}
+
+func (c *Client) Usages() {
+	fmt.Println("Usages:")
+	fmt.Println("exit, q: Exit the block chain")
+	fmt.Println("balance, b: Check balance")
 }

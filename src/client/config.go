@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+type ClientCfg struct {
+	LogPath string `json:"logPath"`
+}
+
 type WalletCfg struct {
 	PubKeyPath string `json:"pubKeyPath"`
 	PriKeyPath string `json:"priKeyPath"`
@@ -16,6 +20,7 @@ type WalletCfg struct {
 type ChainCfg struct {
 	ChainDataBasePath string `json:"chainDataBasePath"`
 	MaxTxPerBlock     int    `json:"maxTxPerBlock"`
+	LogPath           string `json:"logPath"`
 }
 
 type P2PNetCfg struct {
@@ -23,6 +28,7 @@ type P2PNetCfg struct {
 	PriKeyPath     string   `json:"priKeyPath"`
 	Bootstrap      bool     `json:"bootstrap"`
 	ListenAddr     string   `json:"listenAddr"`
+	LogPath        string   `json:"logPath"`
 }
 
 type PBFTCfg struct {
@@ -30,13 +36,25 @@ type PBFTCfg struct {
 	View         uint64 `json:"view"`
 	WaterHead    uint64 `json:"waterHead"`
 	MaxFaultNode int    `json:"maxFaultNode"`
+	LogPath      string `json:"logPath"`
+}
+
+type TxPoolCfg struct {
+	LogPath string `json:"logPath"`
+}
+
+type BlockPoolCfg struct {
+	LogPath string `json:"logPath"`
 }
 
 type Config struct {
-	WalletCfg `json:"walletCfg"`
-	ChainCfg  `json:"chainCfg"`
-	P2PNetCfg `json:"p2PNetCfg"`
-	PBFTCfg   `json:"PBFTCfg"`
+	WalletCfg    `json:"walletCfg"`
+	ChainCfg     `json:"chainCfg"`
+	P2PNetCfg    `json:"p2PNetCfg"`
+	PBFTCfg      `json:"PBFTCfg"`
+	ClientCfg    `json:"clientCfg"`
+	TxPoolCfg    `json:"txPoolCfg"`
+	BlockPoolCfg `json:"blockPoolCfg"`
 }
 
 func LoadConfig(file string) (*Config, error) {
@@ -80,17 +98,29 @@ func DefaultConfig() (*Config, error) {
 		ChainCfg{
 			ChainDataBasePath: "../database/chain_data",
 			MaxTxPerBlock:     9,
+			LogPath:           "",
 		},
 		P2PNetCfg{
 			BootstrapPeers: []string{},
 			PriKeyPath:     "../wallet/private_key.pem",
 			Bootstrap:      false,
+			LogPath:        "",
 		},
 		PBFTCfg{
 			IsPrimary:    false,
 			View:         0,
 			WaterHead:    3,
 			MaxFaultNode: 1,
+			LogPath:      "",
+		},
+		ClientCfg{
+			LogPath: "",
+		},
+		TxPoolCfg{
+			LogPath: "",
+		},
+		BlockPoolCfg{
+			LogPath: "",
 		},
 	}, nil
 }

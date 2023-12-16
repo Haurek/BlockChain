@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"log"
 	"sync"
 )
 
@@ -14,6 +15,7 @@ type Chain struct {
 	Tip        []byte
 	BestHeight uint64
 	DataBase   *badger.DB
+	log        *log.Logger
 	Lock       sync.Mutex
 }
 
@@ -74,51 +76,84 @@ func FindBlocksInRange(chain *Chain, min, max uint64) []*Block {
 
 // CreateChain create a new chain
 // address use for genesis block
-func CreateChain(address []byte) *Chain {
+func CreateChain(address []byte, path, logPath string) (*Chain, error) {
+	//initialize log
+	l := utils.NewLogger("[chain] ", logPath)
+
 	// create a database
-	db, err := OpenDatabase(DataBasePath)
+	db, err := OpenDatabase(path)
 	if err != nil {
-		return nil
+		l.Panic("fail to create database")
+		return nil, err
 	}
+
 	// Genesis node create GenesisBlock
 	genesisBlock, err := NewGenesisBlock(address)
-	utils.HandleError(err)
+	if err != nil {
+		l.Panic("fail to create genesis Block")
+		return nil, err
+	}
 
 	// add latest block flag
 	err = WriteToDB(db, []byte(BlockTable), []byte(TipHashKey), genesisBlock.Header.Hash)
-	utils.HandleError(err)
+	if err != nil {
+		l.Panic("fail to write block data into database")
+		return nil, err
+	}
 
 	chain := &Chain{
 		Tip:        genesisBlock.Header.Hash,
 		BestHeight: 1,
 		DataBase:   db,
+		log:        l,
 	}
 	// add genesis block
 	chain.AddGenesisBlock(genesisBlock)
 
-	return chain
+	return chain, nil
 }
 
 // LoadChain initialize chain from database
-func LoadChain(path string) (*Chain, error) {
+func LoadChain(path, logPath string) (*Chain, error) {
+	// initialize log
+	l := utils.NewLogger("[chain] ", logPath)
+
+	// create a database
 	db, err := OpenDatabase(path)
 	if err != nil {
+		l.Panic("fail to create database")
 		return nil, err
 	}
+
 	// read tip hash from database
 	latestHash, err := ReadFromDB(db, []byte(BlockTable), []byte(TipHashKey))
-	utils.HandleError(err)
+
+	// empty chain
+	var chain *Chain
+	if err != nil {
+		//l.Println("Initialize a new chain")
+		chain = &Chain{
+			Tip:        nil,
+			BestHeight: 0,
+			DataBase:   db,
+			log:        l,
+		}
+		return chain, nil
+	}
+
 	// get best height
 	serializeData, err := ReadFromDB(db, []byte(BlockTable), latestHash)
 	var heightBlock Block
 	err = utils.Deserialize(serializeData, &heightBlock)
 	if err != nil {
+		l.Panic("fail to read Tip Block")
 		return nil, err
 	}
-	chain := &Chain{
+	chain = &Chain{
 		Tip:        latestHash,
 		BestHeight: heightBlock.Header.Height,
 		DataBase:   db,
+		log:        l,
 	}
 
 	return chain, nil
@@ -157,7 +192,6 @@ func (chain *Chain) AddBlock(block *Block) bool {
 	err = utils.Deserialize(preBlockData, &preBlock)
 	utils.HandleError(err)
 
-	// check hash and PoW verify
 	if bytes.Equal(preBlock.Header.Hash, block.Header.PrevHash) {
 		// add to database
 		serializeData, err := utils.Serialize(block)

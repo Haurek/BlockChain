@@ -4,6 +4,7 @@ import (
 	"BlockChain/src/blockchain"
 	"BlockChain/src/mycrypto"
 	p2pnet "BlockChain/src/network"
+	"BlockChain/src/pool"
 	"BlockChain/src/utils"
 	"bytes"
 	"encoding/json"
@@ -81,8 +82,8 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 					Sign:   signature,
 					PubKey: pubKeyByte,
 				}
-				// add pre-prepare message to log
-				pbft.log.AddMessage(pbft.checkPoint, PrePrepareMsg, preprepare)
+				// add pre-prepare message to msgLog
+				pbft.msgLog.AddMessage(pbft.checkPoint, PrePrepareMsg, preprepare)
 				// change the state
 				// primary broadcast pre-prepare message and change state to prepare state
 				pbft.SetState(PrepareState)
@@ -113,7 +114,7 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 			} else {
 				// client node in this state
 				pbft.AddCheckPoint()
-				pbft.log.AddMessage(pbft.checkPoint, RequestMsg, request)
+				pbft.msgLog.AddMessage(pbft.checkPoint, RequestMsg, request)
 				// change state
 				pbft.SetState(ReplyState)
 			}
@@ -152,7 +153,7 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 			} else if pbft.checkPoint+1 != preprepare.SeqNum {
 				// check seqNum fail
 				return
-			} else if pbft.log.GetPrePrepareLog(preprepare.SeqNum) != nil {
+			} else if pbft.msgLog.GetPrePrepareLog(preprepare.SeqNum) != nil {
 				// already receive pre-prepare message
 				return
 			} else if preprepare.SeqNum < pbft.checkPoint || preprepare.SeqNum > pbft.checkPoint+pbft.ws.WaterHead {
@@ -164,8 +165,8 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 			} else {
 				// receive a pre-prepare message, add current seqNum
 				pbft.AddCheckPoint()
-				// add message into log
-				pbft.log.AddMessage(pbft.checkPoint, msgType, data)
+				// add message into msgLog
+				pbft.msgLog.AddMessage(pbft.checkPoint, msgType, data)
 
 				// pack Prepare Message
 				// sign
@@ -182,8 +183,8 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 					Sign:      signature,
 					PubKey:    pubKeyBytes,
 				}
-				// add self prepare message into log
-				pbft.log.AddMessage(pbft.checkPoint, PrepareMsg, prepare)
+				// add self prepare message into msgLog
+				pbft.msgLog.AddMessage(pbft.checkPoint, PrepareMsg, prepare)
 				// change the state to PrepareState
 				pbft.SetState(PrepareState)
 
@@ -229,14 +230,14 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 				// verify signature fail
 				return
 			} else {
-				if pbft.log.HaveLog(prepare.SeqNum, PrepareMsg, prepare.ReplicaID) {
+				if pbft.msgLog.HaveLog(prepare.SeqNum, PrepareMsg, prepare.ReplicaID) {
 					// already have this message
 					return
 				}
-				// add message to log
-				pbft.log.AddMessage(pbft.checkPoint, msgType, data)
-				prepareCount := pbft.log.GetLogCount(pbft.checkPoint, PrepareMsg)
-				selfPrepareMsg := pbft.log.GetPrepareLog(pbft.checkPoint, pbft.selfID)
+				// add message to msgLog
+				pbft.msgLog.AddMessage(pbft.checkPoint, msgType, data)
+				prepareCount := pbft.msgLog.GetLogCount(pbft.checkPoint, PrepareMsg)
+				selfPrepareMsg := pbft.msgLog.GetPrepareLog(pbft.checkPoint, pbft.selfID)
 				pubKeyBytes := mycrypto.PublicKey2Bytes(pbft.publicKey)
 				// check already receive prepare message
 				if prepareCount == 2*pbft.maxFaultNode+1 {
@@ -251,7 +252,7 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 						PubKey:    pubKeyBytes,
 					}
 					// add self commit message
-					pbft.log.AddMessage(pbft.checkPoint, CommitMsg, commit)
+					pbft.msgLog.AddMessage(pbft.checkPoint, CommitMsg, commit)
 					// change state to commit state
 					pbft.SetState(CommitState)
 
@@ -298,20 +299,20 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 				// verify signature fail
 				return
 			} else {
-				if pbft.log.HaveLog(commit.SeqNum, CommitMsg, commit.ReplicaID) {
+				if pbft.msgLog.HaveLog(commit.SeqNum, CommitMsg, commit.ReplicaID) {
 					// already have this message
 					return
 				}
-				// add message to log
-				pbft.log.AddMessage(pbft.checkPoint, msgType, data)
-				commitCount := pbft.log.GetLogCount(pbft.checkPoint, CommitMsg)
-				//selfPrepareMsg := pbft.log.GetPrepareLog(pbft.checkPoint, pbft.selfID)
+				// add message to msgLog
+				pbft.msgLog.AddMessage(pbft.checkPoint, msgType, data)
+				commitCount := pbft.msgLog.GetLogCount(pbft.checkPoint, CommitMsg)
+				//selfPrepareMsg := pbft.msgLog.GetPrepareLog(pbft.checkPoint, pbft.selfID)
 				// check already receive commit message
 				if commitCount == 2*pbft.maxFaultNode+1 {
 					// had received enough commit message
 
 					// send reply message to client
-					preprepare := pbft.log.GetPrePrepareLog(pbft.checkPoint)
+					preprepare := pbft.msgLog.GetPrePrepareLog(pbft.checkPoint)
 					var request RequestMessage
 					err := json.Unmarshal(preprepare.ReqMsg, &request)
 					if err != nil {
@@ -362,13 +363,41 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 	case ReplyState:
 		// client in this state receive reply message
 		if reply, ok := data.(ReplyMessage); ok {
-			pbft.log.AddMessage(pbft.checkPoint, ReplyMsg, reply)
-			replyCount := pbft.log.GetLogCount(pbft.checkPoint, ReplyMsg)
+			pbft.msgLog.AddMessage(pbft.checkPoint, ReplyMsg, reply)
+			replyCount := pbft.msgLog.GetLogCount(pbft.checkPoint, ReplyMsg)
 			if replyCount == pbft.maxFaultNode+1 {
 				// receive enough reply
 				// broadcast new block
-				// TODO
-
+				request := pbft.msgLog.GetRequestLog(pbft.checkPoint)
+				txBytes := request.TxsBytes
+				var Txs []*blockchain.Transaction
+				err := json.Unmarshal(txBytes, &Txs)
+				if err != nil {
+					// msgLog
+				}
+				newBlock := blockchain.NewBlock(pbft.chain.Tip, Txs, pbft.checkPoint)
+				newBlockBytes, err := utils.Serialize(newBlock)
+				if err != nil {
+					// msgLog
+				}
+				newBlockMsg := pool.NewBlockMessage{
+					Height: pbft.checkPoint,
+					Hash:   newBlock.Header.Hash,
+					Block:  newBlockBytes,
+				}
+				blockMsg := pool.BlockMessage{
+					Type: pool.NewBlockBroadcastMsg,
+					Data: newBlockMsg,
+				}
+				serializedData, err := json.Marshal(blockMsg)
+				if err != nil {
+					// msgLog
+				}
+				p2pMsg := p2pnet.Message{
+					Type: p2pnet.BlockMsg,
+					Data: serializedData,
+				}
+				pbft.net.Broadcast(&p2pMsg)
 				// change state
 				pbft.SetState(PrePrepareState)
 			}

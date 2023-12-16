@@ -42,7 +42,7 @@ func NewCoinbaseTx(to []byte, reward int) *Transaction {
 // NewTransaction create new transaction
 func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Transaction, error) {
 	// check valid address
-	if !IsValidAddress(wallet.address) || !IsValidAddress(to) {
+	if !CheckAddress(wallet.address) || !CheckAddress(to) {
 		return nil, errors.New("wrong address")
 	}
 	// check valid amount

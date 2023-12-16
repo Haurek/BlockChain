@@ -1,10 +1,5 @@
 package state
 
-import (
-	"badger"
-	"sync"
-)
-
 type WorldState struct {
 	// block chain
 	BlockHeight uint64
@@ -17,8 +12,6 @@ type WorldState struct {
 	CheckPoint   uint64
 	WaterHead    uint64
 	MaxFaultNode int
-	db           *badger.DB
-	lock         sync.Mutex
 }
 
 //

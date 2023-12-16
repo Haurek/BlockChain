@@ -56,9 +56,6 @@ func NewMsgLog(cap uint64) *MsgLog {
 		Cap:  cap,
 		Logs: make([]*logEntry, cap),
 	}
-	for _, entry := range log.Logs {
-		entry.initEntry()
-	}
 	return log
 }
 

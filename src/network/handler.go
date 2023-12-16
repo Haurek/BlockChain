@@ -37,6 +37,7 @@ outLoop:
 			node.Unlock()
 			return
 		default:
+			node.log.Println("recvData: %s", stream.peerID)
 			msg, err := UnpackMessage(rw)
 			if err != nil {
 				break outLoop
@@ -45,7 +46,7 @@ outLoop:
 			if callback != nil {
 				go callback(msg.Type, msg.Data, stream.peerID)
 			} else {
-				logger.Debugf("unknow Message Type: %s", msg.Type)
+				node.log.Println("unknow Message Type: %s", msg.Type)
 			}
 		}
 	}
@@ -76,6 +77,7 @@ outLoop:
 			return
 		// send message
 		case msg := <-stream.MessageChan:
+			node.log.Println("sendData: %s", stream.peerID)
 			msgBuf, err := PackMessage(msg)
 			if err != nil {
 				break outLoop
@@ -98,3 +100,57 @@ outLoop:
 	default:
 	}
 }
+
+//func (node *P2PNet) handleStream(stream network.Stream) {
+//	// Create a buffer stream for non-blocking read and write.
+//	rw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
+//
+//	go node.readData(rw)
+//	go node.writeData(rw)
+//
+//	// 'stream' will stay open until you close it (or the other side closes it).
+//}
+//
+//func (node *P2PNet) readData(rw *bufio.ReadWriter) {
+//	for {
+//		str, err := rw.ReadString('\n')
+//		if err != nil {
+//			fmt.Println("Error reading from buffer")
+//			panic(err)
+//		}
+//
+//		if str == "" {
+//			return
+//		}
+//		if str != "\n" {
+//			// Green console colour: 	\x1b[32m
+//			// Reset console colour: 	\x1b[0m
+//			fmt.Printf("\x1b[32m%s\x1b[0m> ", str)
+//		}
+//
+//	}
+//}
+//
+//func (node *P2PNet) writeData(rw *bufio.ReadWriter) {
+//	stdReader := bufio.NewReader(os.Stdin)
+//
+//	for {
+//		fmt.Print("> ")
+//		sendData, err := stdReader.ReadString('\n')
+//		if err != nil {
+//			fmt.Println("Error reading from stdin")
+//			panic(err)
+//		}
+//
+//		_, err = rw.WriteString(fmt.Sprintf("%s\n", sendData))
+//		if err != nil {
+//			fmt.Println("Error writing to buffer")
+//			panic(err)
+//		}
+//		err = rw.Flush()
+//		if err != nil {
+//			fmt.Println("Error flushing buffer")
+//			panic(err)
+//		}
+//	}
+//}

@@ -65,7 +65,7 @@ func NewBlock(preHash []byte, Txs []*Transaction, height uint64) *Block {
 // NewGenesisBlock create a genesis block
 func NewGenesisBlock(address []byte) (*Block, error) {
 	// check address
-	if !IsValidAddress(address) {
+	if !CheckAddress(address) {
 		return nil, errors.New("wrong address")
 	}
 	// create header

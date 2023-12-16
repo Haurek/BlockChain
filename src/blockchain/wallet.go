@@ -87,11 +87,13 @@ func LoadWallet(publicKeyPath, privateKeyPath string) (*Wallet, error) {
 // SaveWallet save key pair in file
 func (wallet *Wallet) SaveWallet(publicKeyPath, privateKeyPath string) error {
 	if err := mycrypto.SavePublicKey(wallet.publicKey, publicKeyPath); err != nil {
+		panic("fail to save public key")
 		return err
 	}
 
 	if err := mycrypto.SavePrivateKey(wallet.privateKey, privateKeyPath); err != nil {
 		_ = os.Remove(publicKeyPath)
+		panic("fail to save private key")
 		return err
 	}
 
@@ -122,15 +124,6 @@ func GenerateAddress(publicKeyBytes []byte) []byte {
 // Address2PublicKeyHash address to public key hash
 func Address2PublicKeyHash(address []byte) []byte {
 	return utils.Base58Decode(address)
-}
-
-func IsValidAddress(address []byte) bool {
-	// check address version
-	if address[0] != AddressVersion {
-		return false
-	}
-	// check checksum of an address
-	return CheckAddress(address)
 }
 
 // CheckAddress check checksum of an address

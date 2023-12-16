@@ -5,9 +5,10 @@ import (
 	p2pnet "BlockChain/src/network"
 	"BlockChain/src/state"
 	"BlockChain/src/utils"
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
+	"log"
 	"sync"
 	"time"
 )
@@ -22,12 +23,16 @@ type BlockPool struct {
 	bestPeerID     string
 	newBlock       chan *BlockMessage
 	syncMsg        chan *BlockMessage
+	log            *log.Logger
 }
 
 // NewBlockPool create a new block pool
-func NewBlockPool(net *p2pnet.P2PNet, chain *blockchain.Chain, s *state.WorldState) (*BlockPool, error) {
-	if net != nil {
-		return nil, errors.New("unknown network")
+func NewBlockPool(net *p2pnet.P2PNet, chain *blockchain.Chain, s *state.WorldState, logPath string) *BlockPool {
+	// initialize logger
+	l := utils.NewLogger("[BlockPool] ", logPath)
+
+	if net == nil {
+		l.Panic("unknown network")
 	}
 
 	pool := &BlockPool{
@@ -38,21 +43,44 @@ func NewBlockPool(net *p2pnet.P2PNet, chain *blockchain.Chain, s *state.WorldSta
 		peerBestHeight: 0,
 		newBlock:       make(chan *BlockMessage),
 		syncMsg:        make(chan *BlockMessage),
+		log:            l,
 	}
-	return pool, nil
+	return pool
 }
 
 func (bp *BlockPool) Run() {
+	bp.log.Println("Run Block Pool")
 	// register receive callback func
 	bp.network.RegisterCallback(p2pnet.BlockMsg, bp.OnReceive)
 
 	// run block sync
+	bp.log.Println("Begin Block synchronization")
 	go bp.BlockSynchronization()
 
 	// routine wait new block
 	for {
+		select {
+		// receive new block
+		case newBlockMsg := <-bp.newBlock:
+			msg, _ := newBlockMsg.SplitMessage()
+			if newBlock, ok := msg.(NewBlockMessage); ok {
+				bp.log.Println("receive new block")
+				var block blockchain.Block
+				err := utils.Deserialize(newBlock.Block, &block)
+				if err != nil {
+					bp.log.Println("Deserialize Block fail")
+				}
+				if !(bp.chain.AddBlock(&block)) {
+					bp.log.Println("Add Block to chain fail, put it in the pool")
+					bp.AddBlock(&block)
+				} else {
+					bp.log.Println("Add Block to chain successfully")
+					bp.log.Println("Reindex pool")
+					bp.Reindex()
+				}
+			}
+		}
 	}
-
 }
 
 // OnReceive handle message receive from peer
@@ -61,8 +89,10 @@ func (bp *BlockPool) OnReceive(t p2pnet.MessageType, msgBytes []byte, peerID str
 		return
 	}
 	var blockMsg BlockMessage
+	bp.log.Println("Receive a new message")
 	err := json.Unmarshal(msgBytes, &blockMsg)
 	if err != nil {
+		bp.log.Println("Unmarshal message fail")
 		return
 	}
 	// handle message receive
@@ -91,14 +121,16 @@ func (bp *BlockPool) BlockSynchronization() {
 	}
 	data, err := json.Marshal(blockMsg)
 	if err != nil {
-		return
+		bp.log.Println("Marshal message fail")
 	}
 	p2pMsg := p2pnet.Message{
 		Type: p2pnet.BlockMsg,
 		Data: data,
 	}
+	bp.log.Println("Broadcast sync message to peer")
 	bp.network.Broadcast(&p2pMsg)
 	syncTimer := time.NewTimer(10 * time.Second)
+
 	// run synchronization routine
 	for {
 		select {
@@ -108,6 +140,7 @@ func (bp *BlockPool) BlockSynchronization() {
 			case SyncRequestMsg:
 				// receive other peer sync request
 				if request, ok := msg.(SyncRequestMessage); ok {
+					bp.log.Println("Receive a SyncRequest message")
 					// check best height
 					// send sync response message
 					syncResMsg := SyncResponseMessage{
@@ -121,18 +154,20 @@ func (bp *BlockPool) BlockSynchronization() {
 					}
 					data, err = json.Marshal(blockMsg)
 					if err != nil {
-						return
+						bp.log.Println("Marshal message fail")
 					}
 					p2pMsg = p2pnet.Message{
 						Type: p2pnet.BlockMsg,
 						Data: data,
 					}
 					// send response to node
+					bp.log.Println("Send request message to peer")
 					bp.network.BroadcastToPeer(&p2pMsg, request.NodeID)
 				}
 			case SyncResponseMsg:
 				// receive other peer response
 				if response, ok := msg.(SyncResponseMessage); ok {
+					bp.log.Println("Receive a SyncResponse message")
 					// check best height and update
 					if response.BestHeight > bp.peerBestHeight {
 						bp.UpdatePeerBestHeight(response.BestHeight, response.FromID)
@@ -140,12 +175,14 @@ func (bp *BlockPool) BlockSynchronization() {
 				}
 			case BlockRequestMsg:
 				// handle block request
-				// 从区块链数据库取出请求的区块
 				if requestedBlock, ok := msg.(BlockRequestMessage); ok {
+					bp.log.Println("Receive a BlockRequest message")
 					blocksInRange := blockchain.FindBlocksInRange(bp.chain, requestedBlock.Min, requestedBlock.Max)
 					for _, block := range blocksInRange {
 						serializedData, err := utils.Serialize(block)
-						utils.HandleError(err)
+						if err != nil {
+							bp.log.Println("Serialize block fail")
+						}
 						blockResMsg := BlockResponseMessage{
 							FromID: bp.ws.SelfID,
 							ToID:   requestedBlock.NodeID,
@@ -159,32 +196,34 @@ func (bp *BlockPool) BlockSynchronization() {
 						}
 						data, err = json.Marshal(blockMsg)
 						if err != nil {
-							return
+							bp.log.Println("Marshal message fail")
 						}
 						p2pMsg = p2pnet.Message{
 							Type: p2pnet.BlockMsg,
 							Data: data,
 						}
+						bp.log.Println("Send a BlockResponse message to peer: ", requestedBlock.NodeID)
 						bp.network.BroadcastToPeer(&p2pMsg, requestedBlock.NodeID)
 					}
 				}
-
-				// 发送 BlockResponseMessage 消息回复请求方
-
 			case BlockResponseMsg:
 				// handle block response
 				// 取出BlockResponseMessage中的区块信息
 				if response, ok := msg.(BlockResponseMessage); ok {
-					// 判断收到的区块是否可直接加入区块链，可以则直接插入
+					bp.log.Println("Receive a BlockResponse message")
 					var block blockchain.Block
 					err = utils.Deserialize(response.Block, &block)
-					utils.HandleError(err)
-					if !(bp.chain.AddBlock(&block)) {
-						bp.Reindex()
-						// 无法插入的区块链则暂时加入区块池BlockPool
-						bp.AddBlock(&block)
+					if err != nil {
+						bp.log.Println("Deserialize block fail")
 					}
-
+					if !(bp.chain.AddBlock(&block)) {
+						bp.log.Println("Add Block to chain fail, put it in the pool")
+						bp.AddBlock(&block)
+					} else {
+						bp.log.Println("Add Block to chain successfully")
+						bp.log.Println("Reindex pool")
+						bp.Reindex()
+					}
 				}
 			default:
 
@@ -193,6 +232,7 @@ func (bp *BlockPool) BlockSynchronization() {
 			// 计时器判断同步请求是否完成
 			// 请求完成，开始向拥有最长链的节点发送BlockRequestMessage消息请求区块
 			if bp.peerBestHeight > bp.chain.BestHeight {
+				bp.log.Println("Send Request message to peer: ", bp.bestPeerID)
 				blockReqMsg := BlockRequestMessage{
 					NodeID: bp.ws.SelfID,
 					Min:    bp.chain.BestHeight + 1,
@@ -211,9 +251,6 @@ func (bp *BlockPool) BlockSynchronization() {
 					Data: data,
 				}
 				bp.network.BroadcastToPeer(&p2pMsg, bp.bestPeerID)
-			} else {
-				// 请求未完成，重新设置计时器
-				syncTimer.Reset(10 * time.Second)
 			}
 		}
 	}
@@ -230,7 +267,17 @@ func (bp *BlockPool) AddBlock(block *blockchain.Block) {
 	}
 }
 
+// Reindex add orphan block to chain
 func (bp *BlockPool) Reindex() {
+	if bp.Count() != 0 {
+		bp.mu.Lock()
+		for _, block := range bp.pool {
+			if bytes.Equal(block.Header.PrevHash, bp.chain.Tip) {
+				bp.chain.AddBlock(block)
+			}
+		}
+		bp.mu.Unlock()
+	}
 }
 
 // GetBlock get block from pool by hash
