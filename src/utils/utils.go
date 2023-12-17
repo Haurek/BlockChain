@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/gob"
+	"fmt"
 	"goland/x/crypto/ripemd160"
-	"log"
 )
 
 func Int2Bytes(value int64) []byte {
@@ -39,7 +39,7 @@ func Ripemd160Hash(data []byte) []byte {
 
 func HandleError(err error) {
 	if err != nil {
-		log.Panic(err)
+		fmt.Println(err)
 	}
 }
 

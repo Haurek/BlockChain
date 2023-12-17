@@ -72,8 +72,7 @@ func (tp *TxPool) RemoveTransaction(id string) {
 
 	if _, exists := tp.pool[id]; !exists {
 		delete(tp.pool, id)
-		tp.log.Println("Delete Transaction to pool: ", id)
-
+		tp.log.Println("Delete Transaction from pool: ", id)
 	}
 }
 
@@ -108,7 +107,7 @@ func (tp *TxPool) OnReceive(t p2pnet.MessageType, msgBytes []byte, peerID string
 	switch txMsg.Type {
 	case SendTxMsg:
 		var tx blockchain.Transaction
-		err = utils.Deserialize(txMsg.TxBytes, &tx)
+		err = json.Unmarshal(txMsg.TxBytes, &tx)
 		if err != nil {
 			tp.log.Println("Unmarshal tx fail")
 			return

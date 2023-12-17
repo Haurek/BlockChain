@@ -77,8 +77,10 @@ func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet, chai
 
 	var fsm *PBFTFSM
 	if ws.IsPrimary {
+		l.Println("Initialize primary node")
 		fsm = NewFSM(RequestState)
 	} else {
+		l.Println("Initialize replica node")
 		fsm = NewFSM(PrePrepareState)
 	}
 	pbft := &PBFT{
@@ -110,6 +112,7 @@ func (pbft *PBFT) OnReceive(t p2pnet.MessageType, msgBytes []byte, peerID string
 	var msg PBFTMessage
 	err := json.Unmarshal(msgBytes, &msg)
 	if err != nil {
+		pbft.log.Println("Unmarshal PBFTMessage failed")
 		return
 	}
 	// add to message queue
@@ -117,6 +120,7 @@ func (pbft *PBFT) OnReceive(t p2pnet.MessageType, msgBytes []byte, peerID string
 }
 
 func (pbft *PBFT) Run() {
+	pbft.log.Println("Run consensus")
 	pbft.isStart = true
 	// register callback func
 	pbft.net.RegisterCallback(p2pnet.ConsensusMsg, pbft.OnReceive)
@@ -126,6 +130,7 @@ func (pbft *PBFT) Run() {
 		select {
 		// receive message
 		case msg := <-pbft.msgQueue.Dequeue():
+			pbft.log.Println("Receive a PBFT message")
 			if !pbft.isStart {
 				continue
 			}

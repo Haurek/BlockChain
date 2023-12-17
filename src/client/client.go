@@ -20,16 +20,16 @@ import (
 )
 
 type Client struct {
-	chain         *blockchain.Chain
-	network       *p2pnet.P2PNet
-	consensus     *consensus.PBFT
-	worldState    *state.WorldState
-	wallet        *blockchain.Wallet
-	txPool        *pool.TxPool
-	blockPool     *pool.BlockPool
-	config        *Config
-	log           *log.Logger
-	startNodeDone chan struct{}
+	chain      *blockchain.Chain
+	network    *p2pnet.P2PNet
+	consensus  *consensus.PBFT
+	worldState *state.WorldState
+	wallet     *blockchain.Wallet
+	txPool     *pool.TxPool
+	blockPool  *pool.BlockPool
+	config     *Config
+	log        *log.Logger
+	//startNodeDone chan struct{}
 }
 
 // CreateClient create a new client
@@ -38,7 +38,7 @@ func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*C
 	l := utils.NewLogger("[client] ", config.ClientCfg.LogPath)
 
 	// initialize the network
-	net := p2pnet.CreateNode(config.P2PNetCfg.PriKeyPath, config.P2PNetCfg.ListenAddr, config.P2PNetCfg.Bootstrap, config.P2PNetCfg.BootstrapPeers, config.P2PNetCfg.LogPath)
+	net := p2pnet.CreateNode(config.P2PNetCfg.PriKeyPath, config.P2PNetCfg.ListenAddr, config.P2PNetCfg.LogPath)
 
 	// initialize TxPool
 	txPool := pool.NewTxPool(net, config.TxPoolCfg.LogPath)
@@ -64,15 +64,15 @@ func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*C
 		return nil, err
 	}
 	client := &Client{
-		chain:         c,
-		network:       net,
-		consensus:     pbft,
-		wallet:        w,
-		txPool:        txPool,
-		blockPool:     blockPool,
-		config:        config,
-		log:           l,
-		startNodeDone: make(chan struct{}),
+		chain:     c,
+		network:   net,
+		consensus: pbft,
+		wallet:    w,
+		txPool:    txPool,
+		blockPool: blockPool,
+		config:    config,
+		log:       l,
+		//startNodeDone: make(chan struct{}),
 	}
 	return client, nil
 }
@@ -81,15 +81,12 @@ func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*C
 func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 	// run p2p net
 	c.log.Println("Run p2p net")
-	go c.network.StartNode(c.startNodeDone)
-	<-c.startNodeDone
+	go c.network.StartNode()
 
-	fmt.Println("start pbft")
 	// run pBFT consensus
 	c.log.Println("Run pBFT consensus")
 	go c.consensus.Run()
 
-	fmt.Println("start txpool")
 	// run transaction pool
 	c.log.Println("Run Transaction Pool")
 	go c.txPool.Run()
@@ -101,7 +98,7 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 	var cmd string
 	defer wg.Done()
 	for {
-		fmt.Println("Please input your command:")
+		fmt.Println("\nPlease input your command:")
 		var input string
 		scanner := bufio.NewScanner(os.Stdin)
 		if scanner.Scan() {
@@ -145,6 +142,12 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 				} else {
 					fmt.Println("Please input address and amount")
 				}
+			case "tip":
+				if b := c.chain.FindBlock(c.chain.Tip); b != nil {
+					b.Show()
+				} else {
+					fmt.Println("Uninitialized database")
+				}
 			default:
 				fmt.Println("Unknown command, use \"help\" or \"h\" for usage")
 			}
@@ -162,8 +165,9 @@ func (c *Client) CreateTransaction(amount int, to []byte) {
 	c.txPool.AddTransaction(tx)
 
 	// broadcast transaction to peers
-	txByte, err := utils.Serialize(tx)
+	txByte, err := json.Marshal(tx)
 	if err != nil {
+		c.log.Println("Marshal transaction failed")
 		return
 	}
 
@@ -173,6 +177,7 @@ func (c *Client) CreateTransaction(amount int, to []byte) {
 	}
 	payload, err := json.Marshal(txMessage)
 	if err != nil {
+		c.log.Println("Marshal TxMessage failed")
 		return
 	}
 
@@ -223,9 +228,13 @@ func (c *Client) ProposalNewBlock() {
 		ClientID:  c.worldState.SelfID,
 		TxsBytes:  txBytes,
 	}
+	payload, err := json.Marshal(reqMsg)
+	if err != nil {
+		return
+	}
 	pbftMessage := consensus.PBFTMessage{
 		Type: consensus.RequestMsg,
-		Data: reqMsg,
+		Data: payload,
 	}
 	serialized, err := json.Marshal(pbftMessage)
 	if err != nil {

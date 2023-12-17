@@ -23,6 +23,7 @@ type Chain struct {
 type BlockIterator struct {
 	CurrentHash []byte
 	DataBase    *badger.DB
+	Lock        *sync.Mutex
 }
 
 // Iterator create a block iterator
@@ -30,6 +31,7 @@ func (chain *Chain) Iterator() *BlockIterator {
 	iterator := BlockIterator{
 		CurrentHash: chain.Tip,
 		DataBase:    chain.DataBase,
+		Lock:        &chain.Lock,
 	}
 	return &iterator
 }
@@ -37,7 +39,9 @@ func (chain *Chain) Iterator() *BlockIterator {
 // Next get previous block by preHash
 func (iterator *BlockIterator) Next() *Block {
 	// get current block serialize data
+	iterator.Lock.Lock()
 	serializeData, err := ReadFromDB(iterator.DataBase, []byte(BlockTable), iterator.CurrentHash)
+	iterator.Lock.Unlock()
 	utils.HandleError(err)
 	// deserialize data
 	var currentBlock Block
@@ -50,15 +54,12 @@ func (iterator *BlockIterator) Next() *Block {
 }
 
 // 从区块链中找到高度在范围内的所有区块
-func FindBlocksInRange(chain *Chain, min, max uint64) []*Block {
+func (chain *Chain) FindBlocksInRange(min, max uint64) []*Block {
 	var blocksInRange []*Block
 
 	iter := chain.Iterator()
 	for {
 		block := iter.Next()
-		if block == nil {
-			break
-		}
 
 		if block.Header.Height >= min && block.Header.Height <= max {
 			// 如果区块高度在指定范围内，则将其加入结果列表
@@ -164,7 +165,9 @@ func (chain *Chain) AddGenesisBlock(genesisBlock *Block) {
 	// add genesis block to Chain
 	data, err := utils.Serialize(genesisBlock)
 	utils.HandleError(err)
+	chain.Lock.Lock()
 	err = WriteToDB(chain.DataBase, []byte(BlockTable), genesisBlock.Header.Hash, data)
+	chain.Lock.Unlock()
 	utils.HandleError(err)
 
 	// add GenesisBlock output to UTXO set
@@ -176,7 +179,9 @@ func (chain *Chain) AddGenesisBlock(genesisBlock *Block) {
 	})
 	data, err = utils.Serialize(utxos)
 	utils.HandleError(err)
+	chain.Lock.Lock()
 	err = WriteToDB(chain.DataBase, []byte(ChainStateTable), genesisBlock.Transactions[0].ID, data)
+	chain.Lock.Unlock()
 	utils.HandleError(err)
 }
 
@@ -185,8 +190,21 @@ func (chain *Chain) AddBlock(block *Block) bool {
 	// get current block previous hash
 	preHash := block.Header.PrevHash
 
+	// new block is genesis block
+	if block.IsGenesisBlock() {
+		// add block to chain
+		chain.AddGenesisBlock(block)
+		// update chain metadata
+		chain.Lock.Lock()
+		chain.Tip = block.Header.Hash
+		chain.BestHeight = block.Header.Height
+		chain.Lock.Unlock()
+		return true
+	}
 	// get previous block from database
+	chain.Lock.Lock()
 	preBlockData, err := ReadFromDB(chain.DataBase, []byte(BlockTable), preHash)
+	chain.Lock.Unlock()
 	utils.HandleError(err)
 	var preBlock Block
 	err = utils.Deserialize(preBlockData, &preBlock)
@@ -196,7 +214,9 @@ func (chain *Chain) AddBlock(block *Block) bool {
 		// add to database
 		serializeData, err := utils.Serialize(block)
 		utils.HandleError(err)
+		chain.Lock.Lock()
 		err = WriteToDB(chain.DataBase, []byte(BlockTable), block.Header.Hash, serializeData)
+		chain.Lock.Unlock()
 		utils.HandleError(err)
 
 		// update UTXO set
@@ -222,11 +242,17 @@ func (chain *Chain) HaveBlock(hash []byte) bool {
 
 // FindBlock return a block by hash
 func (chain *Chain) FindBlock(hash []byte) *Block {
+	chain.Lock.Lock()
 	serializeData, err := ReadFromDB(chain.DataBase, []byte(BlockTable), hash)
-	utils.HandleError(err)
+	chain.Lock.Unlock()
+	if err != nil {
+		return nil
+	}
 	var block Block
 	err = utils.Deserialize(serializeData, &block)
-	utils.HandleError(err)
+	if err != nil {
+		return nil
+	}
 	return &block
 }
 

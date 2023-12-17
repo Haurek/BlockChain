@@ -2,23 +2,25 @@ package blockchain
 
 import (
 	"BlockChain/src/utils"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 )
 
 // Block type
 type Block struct {
-	Header             *BlockHeader
-	TransactionCounter int
-	Transactions       []*Transaction
+	Header             *BlockHeader   `json:"header"`
+	TransactionCounter int            `json:"transactionCounter"`
+	Transactions       []*Transaction `json:"transactions"`
 }
 
 // BlockHeader header of a block
 type BlockHeader struct {
-	Timestamp int64
-	Hash      []byte
-	PrevHash  []byte
-	Height    uint64
+	Timestamp int64  `json:"timestamp"`
+	Hash      []byte `json:"hash"`
+	PrevHash  []byte `json:"prevHash"`
+	Height    uint64 `json:"height"`
 	//MerkleRoot []byte
 }
 
@@ -30,25 +32,6 @@ func NewBlock(preHash []byte, Txs []*Transaction, height uint64) *Block {
 	header.PrevHash = preHash
 	header.Hash = []byte{}
 	header.Height = height
-	// Serialize Transactions
-	//var TxsBytes [][]byte
-	//for _, Tx := range Txs {
-	//	TxBytes, err := utils.Serialize(Tx)
-	//	utils.HandleError(err)
-	//	TxsBytes = append(TxsBytes, TxBytes)
-	//}
-
-	// generate merkle tree
-	//merkleTree := NewMerkleTree(TxsBytes)
-	//header.MerkleRoot = merkleTree.Root.Hash
-	//headerData := bytes.Join(
-	//	[][]byte{
-	//		header.PrevHash,
-	//		header.MerkleRoot,
-	//		Int2Bytes(header.Timestamp),
-	//	},
-	//	[]byte{},
-	//)
 
 	block := Block{
 		Header:             header,
@@ -73,19 +56,11 @@ func NewGenesisBlock(address []byte) (*Block, error) {
 	header.Timestamp = time.Now().Unix()
 	header.PrevHash = []byte{}
 	header.Hash = []byte{}
-	header.Height = 0
+	header.Height = 1
 	genesisTx := NewCoinbaseTx(address, GenesisValue)
 
-	//// Serialize Transactions
+	// Serialize Transactions
 	Txs := []*Transaction{genesisTx}
-	//var TxsBytes [][]byte
-	//TxBytes, err := Serialize(genesisTx)
-	//HandleError(err)
-	//TxsBytes = append(TxsBytes, TxBytes)
-	//
-	//// generate merkle tree
-	//merkleTree := NewMerkleTree(TxsBytes)
-	//header.MerkleRoot = merkleTree.Root.Hash
 
 	genesisBlock := Block{
 		Header:             header,
@@ -100,5 +75,12 @@ func NewGenesisBlock(address []byte) (*Block, error) {
 
 // IsGenesisBlock check if the block is genesis block
 func (block *Block) IsGenesisBlock() bool {
-	return block.Header.Height == 0
+	return block.Header.Height == 1
+}
+
+func (block *Block) Show() {
+	fmt.Println("Hash: ", hex.EncodeToString(block.Header.Hash))
+	fmt.Println("Height: ", block.Header.Height)
+	fmt.Println("PreHash: ", hex.EncodeToString(block.Header.PrevHash))
+	fmt.Println("Timestamp: ", block.Header.Timestamp)
 }

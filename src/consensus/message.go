@@ -1,5 +1,7 @@
 package consensus
 
+import "encoding/json"
+
 type PBFTMsgType int32
 
 const (
@@ -17,7 +19,7 @@ const (
 
 type PBFTMessage struct {
 	Type PBFTMsgType `json:"type"`
-	Data interface{} `json:"data"`
+	Data []byte      `json:"data"`
 }
 
 // RequestMessage primary node proposal new block
@@ -106,126 +108,56 @@ type NewViewMessage struct {
 func (m *PBFTMessage) SplitMessage() (interface{}, PBFTMsgType) {
 	switch m.Type {
 	case RequestMsg:
-		data, ok := m.Data.(map[string]interface{})
-		if !ok {
+		var reMsg RequestMessage
+		err := json.Unmarshal(m.Data, &reMsg)
+		if err != nil {
 			return nil, DefaultMsg
-		}
-		reMsg := RequestMessage{
-			Timestamp: int64(data["view"].(float64)),
-			ClientID:  data["clientID"].(string),
-			TxsBytes:  []byte(data["txsBytes"].(string)),
 		}
 		return reMsg, RequestMsg
 	case PrePrepareMsg:
-		data, ok := m.Data.(map[string]interface{})
-		if !ok {
+		var ppMsg PrePrepareMessage
+		err := json.Unmarshal(m.Data, &ppMsg)
+		if err != nil {
 			return nil, DefaultMsg
-		}
-		ppMsg := PrePrepareMessage{
-			View:   uint64(data["view"].(float64)),
-			SeqNum: uint64(data["seqNum"].(float64)),
-			Digest: []byte(data["digest"].(string)),
-			ReqMsg: []byte(data["reqMsg"].(string)),
-			Sign:   []byte(data["sign"].(string)),
-			PubKey: []byte(data["pubKey"].(string)),
 		}
 		return ppMsg, PrePrepareMsg
 
 	case PrepareMsg:
-		data, ok := m.Data.(map[string]interface{})
-		if !ok {
+		var pMsg PrepareMessage
+		err := json.Unmarshal(m.Data, &pMsg)
+		if err != nil {
 			return nil, DefaultMsg
-		}
-		pMsg := PrepareMessage{
-			View:      uint64(data["view"].(float64)),
-			SeqNum:    uint64(data["seqNum"].(float64)),
-			Digest:    []byte(data["digest"].(string)),
-			ReplicaID: data["replicaID"].(string),
-			Sign:      []byte(data["sign"].(string)),
-			PubKey:    []byte(data["pubKey"].(string)),
 		}
 		return pMsg, PrepareMsg
 
 	case CommitMsg:
-		data, ok := m.Data.(map[string]interface{})
-		if !ok {
+		var cMsg CommitMessage
+		err := json.Unmarshal(m.Data, &cMsg)
+		if err != nil {
 			return nil, DefaultMsg
-		}
-		cMsg := CommitMessage{
-			View:      uint64(data["view"].(float64)),
-			SeqNum:    uint64(data["seqNum"].(float64)),
-			Digest:    []byte(data["digest"].(string)),
-			ReplicaID: data["replicaID"].(string),
-			Sign:      []byte(data["sign"].(string)),
-			PubKey:    []byte(data["pubKey"].(string)),
 		}
 		return cMsg, CommitMsg
 	case ReplyMsg:
-		data, ok := m.Data.(map[string]interface{})
-		if !ok {
+		var rMsg RequestMessage
+		err := json.Unmarshal(m.Data, &rMsg)
+		if err != nil {
 			return nil, DefaultMsg
-		}
-		rMsg := ReplyMessage{
-			View:      uint64(data["view"].(float64)),
-			Timestamp: int64(data["view"].(float64)),
-			ReplicaID: data["replicaID"].(string),
 		}
 		return rMsg, ReplyMsg
 	case CheckPointMsg:
-		data, ok := m.Data.(map[string]interface{})
-		if !ok {
+		var cpMsg CheckPointMessage
+		err := json.Unmarshal(m.Data, &cpMsg)
+		if err != nil {
 			return nil, DefaultMsg
-		}
-		cpMsg := CheckPointMessage{
-			SeqNum:    uint64(data["seqNum"].(float64)),
-			Digest:    []byte(data["digest"].(string)),
-			ReplicaID: data["replicaID"].(string),
 		}
 		return cpMsg, CheckPointMsg
 
 	case ViewChangeMsg:
-		data, ok := m.Data.(map[string]interface{})
-		if !ok {
+		var vcMsg ViewChangeMessage
+		err := json.Unmarshal(m.Data, &vcMsg)
+		if err != nil {
 			return nil, DefaultMsg
 		}
-		vcMsg := ViewChangeMessage{
-			NewView:          uint64(data["newView"].(float64)),
-			StableCheckPoint: uint64(data["stableCheckPoint"].(float64)),
-			ReplicaID:        data["replicaID"].(string),
-		}
-
-		checkpointSet, ok := data["checkPointSet"].(map[string]interface{})
-		if !ok {
-			return nil, DefaultMsg
-		}
-		vcMsg.CheckPointSet = make(map[string]uint64)
-		for k, v := range checkpointSet {
-			seqNum, ok := v.(float64)
-			if !ok {
-				return nil, DefaultMsg
-			}
-			vcMsg.CheckPointSet[k] = uint64(seqNum)
-		}
-
-		prepareMsgSet, ok := data["prepareMsgSet"].(map[string]interface{})
-		if !ok {
-			return nil, DefaultMsg
-		}
-		vcMsg.PrepareMsgSet = make(map[uint64]PrepareMessage)
-		for _, v := range prepareMsgSet {
-			seqNum, ok := v.(map[string]interface{})
-			if !ok {
-				return nil, DefaultMsg
-			}
-			pMsg := PrepareMessage{
-				View:      uint64(seqNum["view"].(float64)),
-				SeqNum:    uint64(seqNum["seqNum"].(float64)),
-				Digest:    []byte(seqNum["digest"].(string)),
-				ReplicaID: seqNum["replicaID"].(string),
-			}
-			vcMsg.PrepareMsgSet[pMsg.SeqNum] = pMsg
-		}
-
 		return vcMsg, ViewChangeMsg
 
 	case ViewChangeAckMsg:
@@ -233,85 +165,11 @@ func (m *PBFTMessage) SplitMessage() (interface{}, PBFTMsgType) {
 		return ViewChangeAckMessage{}, ViewChangeAckMsg
 
 	case NewViewMsg:
-		data, ok := m.Data.(map[string]interface{})
-		if !ok {
+		var nvMsg NewViewMessage
+		err := json.Unmarshal(m.Data, &nvMsg)
+		if err != nil {
 			return nil, DefaultMsg
 		}
-		nvMsg := NewViewMessage{
-			NewView: uint64(data["newView"].(float64)),
-		}
-
-		viewChangeSet, ok := data["viewChangeSet"].(map[string]interface{})
-		if !ok {
-			return nil, DefaultMsg
-		}
-		nvMsg.ViewChangeSet = make(map[string]ViewChangeMessage)
-		for k, v := range viewChangeSet {
-			viewChangeData, ok := v.(map[string]interface{})
-			if !ok {
-				return nil, DefaultMsg
-			}
-
-			viewChangeMsg := ViewChangeMessage{
-				NewView:          uint64(viewChangeData["newView"].(float64)),
-				StableCheckPoint: uint64(viewChangeData["stableCheckPoint"].(float64)),
-				ReplicaID:        viewChangeData["replicaID"].(string),
-			}
-
-			checkpointSet, ok := viewChangeData["checkPointSet"].(map[string]interface{})
-			if !ok {
-				return nil, DefaultMsg
-			}
-			viewChangeMsg.CheckPointSet = make(map[string]uint64)
-			for ck, cv := range checkpointSet {
-				seqNum, ok := cv.(float64)
-				if !ok {
-					return nil, DefaultMsg
-				}
-				viewChangeMsg.CheckPointSet[ck] = uint64(seqNum)
-			}
-
-			prepareMsgSet, ok := viewChangeData["prepareMsgSet"].(map[string]interface{})
-			if !ok {
-				return nil, DefaultMsg
-			}
-			viewChangeMsg.PrepareMsgSet = make(map[uint64]PrepareMessage)
-			for _, pv := range prepareMsgSet {
-				seqNum, ok := pv.(map[string]interface{})
-				if !ok {
-					return nil, DefaultMsg
-				}
-				pMsg := PrepareMessage{
-					View:      uint64(seqNum["view"].(float64)),
-					SeqNum:    uint64(seqNum["seqNum"].(float64)),
-					Digest:    []byte(seqNum["digest"].(string)),
-					ReplicaID: seqNum["replicaID"].(string),
-				}
-				viewChangeMsg.PrepareMsgSet[pMsg.SeqNum] = pMsg
-			}
-
-			nvMsg.ViewChangeSet[k] = viewChangeMsg
-		}
-
-		oldSet, ok := data["oldSet"].(map[string]interface{})
-		if !ok {
-			return nil, DefaultMsg
-		}
-		nvMsg.OldSet = make(map[uint64]PrepareMessage)
-		for _, v := range oldSet {
-			seqNum, ok := v.(map[string]interface{})
-			if !ok {
-				return nil, DefaultMsg
-			}
-			pMsg := PrepareMessage{
-				View:      uint64(seqNum["view"].(float64)),
-				SeqNum:    uint64(seqNum["seqNum"].(float64)),
-				Digest:    []byte(seqNum["digest"].(string)),
-				ReplicaID: seqNum["replicaID"].(string),
-			}
-			nvMsg.OldSet[pMsg.SeqNum] = pMsg
-		}
-
 		return nvMsg, NewViewMsg
 
 	default:

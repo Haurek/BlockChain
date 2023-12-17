@@ -9,7 +9,8 @@ import (
 
 func main() {
 	// create client
-	config, err := client.LoadConfig("./config.json")
+	//config, err := client.LoadConfig("./config.json")
+	config, err := client.LoadConfig("./Node3/debug.json")
 	if err != nil {
 		fmt.Println("load config fail")
 		return
@@ -30,8 +31,8 @@ func main() {
 	}
 
 	// initialize the chain
-	//chain, err := blockchain.CreateChain(wallet.GetAddress(), config.ChainCfg.ChainDataBasePath, config.ChainCfg.LogPath)
-	chain, err := blockchain.LoadChain(config.ChainCfg.ChainDataBasePath, config.ChainCfg.LogPath)
+	chain, err := blockchain.CreateChain(wallet.GetAddress(), config.ChainCfg.ChainDataBasePath, config.ChainCfg.LogPath)
+	//chain, err := blockchain.LoadChain(config.ChainCfg.ChainDataBasePath, config.ChainCfg.LogPath)
 	if err != nil {
 		fmt.Println("Create chain fail")
 		return
@@ -48,7 +49,6 @@ func main() {
 	var wg sync.WaitGroup
 	var exitChan = make(chan struct{})
 	wg.Add(1)
-	fmt.Println("Run client")
 	go c.Run(&wg, exitChan)
 
 	<-exitChan
