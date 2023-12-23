@@ -28,6 +28,7 @@ func main() {
 	}
 
 	// initialize the chain
+	//chain, err := blockchain.CreateChain(wallet.GetAddress(), config.ChainCfg.ChainDataBasePath, config.ChainCfg.LogPath)
 	chain, err := blockchain.LoadChain(config.ChainCfg.ChainDataBasePath, config.ChainCfg.LogPath)
 	if err != nil {
 		return
@@ -48,17 +49,3 @@ func main() {
 	<-exitChan
 	wg.Wait()
 }
-
-//func main() {
-//	// create client
-//	//config, err := client.LoadConfig("./Node2/debug.json")
-//	config, err := client.LoadConfig("./config.json")
-//	if err != nil {
-//		return
-//	}
-//	node := p2pnet.CreateNode(config.P2PNetCfg.PriKeyPath, config.P2PNetCfg.ListenAddr, config.P2PNetCfg.Bootstrap, config.P2PNetCfg.BootstrapPeers, config.P2PNetCfg.LogPath)
-//	var wg sync.WaitGroup
-//	wg.Add(1)
-//	go node.StartNode()
-//	wg.Wait()
-//}

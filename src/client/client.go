@@ -5,10 +5,8 @@ import (
 	"BlockChain/src/consensus"
 	"BlockChain/src/network"
 	"BlockChain/src/pool"
-	"BlockChain/src/state"
 	"BlockChain/src/utils"
 	"bufio"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,20 +14,17 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 type Client struct {
-	chain      *blockchain.Chain
-	network    *p2pnet.P2PNet
-	consensus  *consensus.PBFT
-	worldState *state.WorldState
-	wallet     *blockchain.Wallet
-	txPool     *pool.TxPool
-	blockPool  *pool.BlockPool
-	config     *Config
-	log        *log.Logger
-	//startNodeDone chan struct{}
+	chain     *blockchain.Chain
+	network   *p2pnet.P2PNet
+	consensus *consensus.PBFT
+	wallet    *blockchain.Wallet
+	txPool    *pool.TxPool
+	blockPool *pool.BlockPool
+	config    *Config
+	log       *log.Logger
 }
 
 // CreateClient create a new client
@@ -43,22 +38,11 @@ func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*C
 	// initialize TxPool
 	txPool := pool.NewTxPool(net, config.TxPoolCfg.LogPath)
 
-	// initialize the world state
-	ws := &state.WorldState{
-		BlockHeight:  c.BestHeight,
-		Tip:          c.Tip,
-		IsPrimary:    config.PBFTCfg.IsPrimary,
-		SelfID:       net.Host.ID().String(),
-		View:         config.PBFTCfg.View,
-		CheckPoint:   c.BestHeight,
-		WaterHead:    config.PBFTCfg.WaterHead,
-		MaxFaultNode: config.PBFTCfg.MaxFaultNode,
-	}
 	// initialize BlockPool
-	blockPool := pool.NewBlockPool(net, c, ws, config.BlockPoolCfg.LogPath)
+	blockPool := pool.NewBlockPool(net, c, config.BlockPoolCfg.LogPath)
 
 	// initialize the consensus
-	pbft, err := consensus.NewPBFT(ws, txPool, net, c, config.PBFTCfg.LogPath)
+	pbft, err := consensus.NewPBFT(config.PBFTCfg.NodeNum, config.PBFTCfg.Index, config.PBFTCfg.MaxFaultNode, config.PBFTCfg.View, txPool, blockPool, net, c, w, config.PBFTCfg.LogPath)
 	if err != nil {
 		l.Panic("Initialize pBFT consensus fail")
 		return nil, err
@@ -72,7 +56,6 @@ func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*C
 		blockPool: blockPool,
 		config:    config,
 		log:       l,
-		//startNodeDone: make(chan struct{}),
 	}
 	return client, nil
 }
@@ -113,28 +96,23 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 			cmd = parts[0]
 			switch cmd {
 			case "exit":
+				fallthrough
 			case "q":
 				close(exitChan)
 				return nil
 			case "help":
+				fallthrough
 			case "h":
 				c.Usages()
-			case "balance":
-			case "b":
-				// TODO
-				fmt.Printf("Your balance: %d\n", c.GetBalance())
-			case "request":
-			case "r":
-				c.ProposalNewBlock()
-			case "address":
-				fmt.Println(hex.EncodeToString(c.wallet.GetAddress()))
+
 			case "transaction":
+				fallthrough
 			case "tx":
 				if len(parts) == 3 {
 					amount, err := strconv.Atoi(parts[1])
 					if err != nil {
 						fmt.Println("wrong amount")
-					} else if toAddress, err := hex.DecodeString(parts[2]); err != nil {
+					} else if toAddress := []byte(parts[2]); err != nil {
 						fmt.Println("wrong address")
 					} else {
 						c.CreateTransaction(amount, toAddress)
@@ -142,12 +120,11 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 				} else {
 					fmt.Println("Please input address and amount")
 				}
-			case "tip":
-				if b := c.chain.FindBlock(c.chain.Tip); b != nil {
-					b.Show()
-				} else {
-					fmt.Println("Uninitialized database")
-				}
+
+			case "status":
+				fallthrough
+			case "s":
+				c.ShowStatus()
 			default:
 				fmt.Println("Unknown command, use \"help\" or \"h\" for usage")
 			}
@@ -190,63 +167,32 @@ func (c *Client) CreateTransaction(amount int, to []byte) {
 
 // GetBalance get balance of the client
 func (c *Client) GetBalance() int {
-	// TODO
-	return 0
+	return blockchain.GetBalanceFromSet(c.chain.DataBase, c.wallet.GetAddress())
 }
 
-// ProposalNewBlock proposal new block when TxPool is full
-func (c *Client) ProposalNewBlock() {
-	// check TxPool
-	if c.txPool.Count() == 0 {
-		// tx pool is empty
-		return
-	}
+// ShowStatus show status of the blockchain
+func (c *Client) ShowStatus() {
+	fmt.Println("Address: ", string(c.wallet.GetAddress()))
+	fmt.Println("Balance: ", c.GetBalance())
 
-	// get Tx from TxPool and verify Tx
-	txs := c.txPool.GetTransactions()
-	var packTxs []*blockchain.Transaction
-	count := 0
-	for id, tx := range txs {
-		if !blockchain.VerifyTransaction(c.chain, tx) {
-			// transaction is invalid
-			c.txPool.RemoveTransaction(id)
-			continue
-		}
-		packTxs = append(packTxs, tx)
-		count++
-		if count == c.config.ChainCfg.MaxTxPerBlock {
-			break
-		}
-	}
-	// pack TxsBytes into Request message
-	txBytes, err := json.Marshal(packTxs)
-	if err != nil {
-		return
-	}
-	reqMsg := consensus.RequestMessage{
-		Timestamp: time.Now().Unix(),
-		ClientID:  c.worldState.SelfID,
-		TxsBytes:  txBytes,
-	}
-	payload, err := json.Marshal(reqMsg)
-	if err != nil {
-		return
-	}
-	pbftMessage := consensus.PBFTMessage{
-		Type: consensus.RequestMsg,
-		Data: payload,
-	}
-	serialized, err := json.Marshal(pbftMessage)
-	if err != nil {
-		return
-	}
-	p2pMsg := p2pnet.Message{
-		Type: p2pnet.ConsensusMsg,
-		Data: serialized,
-	}
+	fmt.Println("\nBlockChain Status:")
+	fmt.Println("Height: ", c.chain.GetHeight())
+	fmt.Println("Tip: ", c.chain.GetTip())
 
-	// send request message to primary node
-	c.network.BroadcastToPeer(&p2pMsg, c.worldState.PrimaryID)
+	fmt.Println("\nNetwork Status: ")
+	fmt.Println("Host ID: ", c.network.Host.ID().String())
+
+	fmt.Println("\nPoolStatus: ")
+	fmt.Println("TxPool count: ", c.txPool.Count())
+	fmt.Println("BlocKPool count: ", c.blockPool.Count())
+
+	fmt.Println("\npBFT consensus status: ")
+	if c.consensus.IsPrimary() {
+		fmt.Println("Is Primary Node: true")
+	} else {
+		fmt.Println("Is Primary Node: false")
+	}
+	fmt.Println("View: ", c.consensus.GetView())
 }
 
 func (c *Client) Usages() {

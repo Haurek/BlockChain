@@ -3,7 +3,6 @@ package pool
 import (
 	"BlockChain/src/blockchain"
 	p2pnet "BlockChain/src/network"
-	"BlockChain/src/state"
 	"BlockChain/src/utils"
 	"bytes"
 	"encoding/hex"
@@ -14,11 +13,10 @@ import (
 )
 
 type BlockPool struct {
-	mu             sync.Mutex
+	lock           sync.Mutex
 	pool           map[string]*blockchain.Block
 	chain          *blockchain.Chain
 	network        *p2pnet.P2PNet
-	ws             *state.WorldState
 	peerBestHeight uint64
 	bestPeerID     string
 	newBlock       chan *BlockMessage
@@ -27,7 +25,7 @@ type BlockPool struct {
 }
 
 // NewBlockPool create a new block pool
-func NewBlockPool(net *p2pnet.P2PNet, chain *blockchain.Chain, s *state.WorldState, logPath string) *BlockPool {
+func NewBlockPool(net *p2pnet.P2PNet, chain *blockchain.Chain, logPath string) *BlockPool {
 	// initialize logger
 	l := utils.NewLogger("[BlockPool] ", logPath)
 
@@ -39,7 +37,6 @@ func NewBlockPool(net *p2pnet.P2PNet, chain *blockchain.Chain, s *state.WorldSta
 		pool:           make(map[string]*blockchain.Block),
 		network:        net,
 		chain:          chain,
-		ws:             s,
 		peerBestHeight: 0,
 		newBlock:       make(chan *BlockMessage),
 		syncMsg:        make(chan *BlockMessage),
@@ -58,36 +55,35 @@ func (bp *BlockPool) Run() {
 	go bp.BlockSyncRoutine()
 
 	// routine wait new block
-	for {
-		select {
-		// receive new block
-		case newBlockMsg := <-bp.newBlock:
-			msg, _ := newBlockMsg.SplitMessage()
-			if newBlock, ok := msg.(NewBlockMessage); ok {
-				bp.log.Println("receive new block")
-				var block blockchain.Block
-				err := json.Unmarshal(newBlock.Block, &block)
-				if err != nil {
-					bp.log.Println("Deserialize Block fail")
-				}
-				bp.log.Printf("block height: %d, block hash: %s", block.Header.Height, block.Header.Hash)
-				if !(bp.chain.AddBlock(&block)) {
-					bp.log.Println("Add Block to chain fail, put it in the pool")
-					bp.AddBlock(&block)
-				} else {
-					bp.log.Println("Add Block to chain successfully")
-					bp.log.Println("Reindex pool")
-					bp.Reindex()
-				}
-			}
-		}
-	}
+	//for {
+	//	select {
+	//	// receive new block
+	//	case newBlockMsg := <-bp.newBlock:
+	//		msg, _ := newBlockMsg.SplitMessage()
+	//		if newBlock, ok := msg.(NewBlockMessage); ok {
+	//			bp.log.Println("receive new block")
+	//			var block blockchain.Block
+	//			err := json.Unmarshal(newBlock.Block, &block)
+	//			if err != nil {
+	//				bp.log.Println("Deserialize Block fail")
+	//			}
+	//			bp.log.Printf("block height: %d, block hash: %s", block.Header.Height, block.Header.Hash)
+	//			if !(bp.chain.AddBlock(&block)) {
+	//				bp.log.Println("Add Block to chain fail, put it in the pool")
+	//				bp.AddBlock(&block)
+	//			} else {
+	//				bp.log.Println("Add Block to chain successfully")
+	//				bp.log.Println("Reindex pool")
+	//				bp.Reindex()
+	//			}
+	//		}
+	//	}
+	//}
 }
 
 // OnReceive handle message receive from peer
 func (bp *BlockPool) OnReceive(t p2pnet.MessageType, msgBytes []byte, peerID string) {
 	if t != p2pnet.BlockMsg {
-		bp.log.Println("Unknown message type")
 		return
 	}
 	var blockMsg BlockMessage
@@ -108,17 +104,13 @@ func (bp *BlockPool) OnReceive(t p2pnet.MessageType, msgBytes []byte, peerID str
 		bp.syncMsg <- &blockMsg
 		bp.log.Println("Receive a sync message")
 
-	case NewBlockBroadcastMsg:
-		bp.newBlock <- &blockMsg
-		bp.log.Println("Receive a new block message")
-
 	default:
 		return
 	}
 }
 
 func (bp *BlockPool) BlockSynchronization() {
-	blockMsg, err := CreateBlockMessage(SyncRequestMsg, bp.ws.SelfID, bp.chain.BestHeight)
+	blockMsg, err := CreateBlockMessage(SyncRequestMsg, bp.network.ID, bp.chain.BestHeight)
 	if err != nil {
 		bp.log.Println("Create message fail")
 		return
@@ -137,7 +129,7 @@ func (bp *BlockPool) BlockSynchronization() {
 }
 
 func (bp *BlockPool) BlockSyncRoutine() {
-	go bp.BlockSynchronization()
+	bp.BlockSynchronization()
 	syncTimer := time.NewTimer(5 * time.Second)
 
 	// run synchronization routine
@@ -152,7 +144,7 @@ func (bp *BlockPool) BlockSyncRoutine() {
 					bp.log.Println("Receive a SyncRequest message")
 					// check best height
 					// send sync response message
-					blockMsg, err := CreateBlockMessage(SyncResponseMsg, bp.ws.SelfID, request.NodeID, bp.chain.BestHeight)
+					blockMsg, err := CreateBlockMessage(SyncResponseMsg, bp.network.ID, request.NodeID, bp.chain.BestHeight)
 
 					data, err := json.Marshal(blockMsg)
 					if err != nil {
@@ -190,7 +182,7 @@ func (bp *BlockPool) BlockSyncRoutine() {
 						}
 
 						// send block response message
-						blockMsg, err := CreateBlockMessage(BlockResponseMsg, bp.ws.SelfID, requestedBlock.NodeID, block.Header.Height, block.Header.Hash, serializedData)
+						blockMsg, err := CreateBlockMessage(BlockResponseMsg, bp.network.ID, requestedBlock.NodeID, block.Header.Height, block.Header.Hash, serializedData)
 						data, err := json.Marshal(blockMsg)
 						if err != nil {
 							bp.log.Println("Marshal message fail")
@@ -231,7 +223,7 @@ func (bp *BlockPool) BlockSyncRoutine() {
 			// sync timeout
 			if bp.peerBestHeight > bp.chain.BestHeight {
 				bp.log.Println("Send block request message to peer: ", bp.bestPeerID)
-				blockMsg, err := CreateBlockMessage(BlockRequestMsg, bp.ws.SelfID, bp.chain.BestHeight+1, bp.peerBestHeight)
+				blockMsg, err := CreateBlockMessage(BlockRequestMsg, bp.network.ID, bp.chain.BestHeight+1, bp.peerBestHeight)
 				data, err := json.Marshal(blockMsg)
 				if err != nil {
 					bp.log.Println("Marshal block fail")
@@ -244,7 +236,7 @@ func (bp *BlockPool) BlockSyncRoutine() {
 				}
 				bp.network.BroadcastToPeer(&p2pMsg, bp.bestPeerID)
 			} else {
-				go bp.BlockSynchronization()
+				bp.BlockSynchronization()
 				syncTimer.Reset(10 * time.Second)
 			}
 		}
@@ -253,11 +245,12 @@ func (bp *BlockPool) BlockSyncRoutine() {
 
 // AddBlock add block to pool
 func (bp *BlockPool) AddBlock(block *blockchain.Block) {
-	bp.mu.Lock()
-	defer bp.mu.Unlock()
+	bp.lock.Lock()
+	defer bp.lock.Unlock()
 
 	id := hex.EncodeToString(block.Header.Hash)
 	if _, exists := bp.pool[id]; !exists {
+		// add block to pool
 		bp.pool[id] = block
 	}
 }
@@ -265,20 +258,29 @@ func (bp *BlockPool) AddBlock(block *blockchain.Block) {
 // Reindex add orphan block to chain
 func (bp *BlockPool) Reindex() {
 	if bp.Count() != 0 {
-		bp.mu.Lock()
-		for _, block := range bp.pool {
-			if bytes.Equal(block.Header.PrevHash, bp.chain.Tip) {
-				bp.chain.AddBlock(block)
+		for {
+			found := false
+			for _, block := range bp.pool {
+				if bytes.Equal(block.Header.PrevHash, bp.chain.Tip) {
+					bp.chain.AddBlock(block)
+					bp.RemoveBlock(block.Header.Hash)
+					found = true
+					break
+				} else {
+					continue
+				}
+			}
+			if len(bp.pool) == 0 || !found {
+				break
 			}
 		}
-		bp.mu.Unlock()
 	}
 }
 
 // GetBlock get block from pool by hash
 func (bp *BlockPool) GetBlock(hash []byte) *blockchain.Block {
-	bp.mu.Lock()
-	defer bp.mu.Unlock()
+	bp.lock.Lock()
+	defer bp.lock.Unlock()
 	id := hex.EncodeToString(hash)
 	if _, exists := bp.pool[id]; !exists {
 		return bp.pool[id]
@@ -288,18 +290,18 @@ func (bp *BlockPool) GetBlock(hash []byte) *blockchain.Block {
 
 // RemoveBlock remove block from pool by hash
 func (bp *BlockPool) RemoveBlock(hash []byte) {
-	bp.mu.Lock()
-	defer bp.mu.Unlock()
+	bp.lock.Lock()
+	defer bp.lock.Unlock()
 	id := hex.EncodeToString(hash)
-	if _, exists := bp.pool[id]; !exists {
+	if _, exists := bp.pool[id]; exists {
 		delete(bp.pool, id)
 	}
 }
 
 // HaveBlock check a block in pool
 func (bp *BlockPool) HaveBlock(hash []byte) bool {
-	bp.mu.Lock()
-	defer bp.mu.Unlock()
+	bp.lock.Lock()
+	defer bp.lock.Unlock()
 	id := hex.EncodeToString(hash)
 	_, exists := bp.pool[id]
 	return exists
@@ -307,15 +309,15 @@ func (bp *BlockPool) HaveBlock(hash []byte) bool {
 
 // Count block num in pool
 func (bp *BlockPool) Count() int {
-	bp.mu.Lock()
-	defer bp.mu.Unlock()
+	bp.lock.Lock()
+	defer bp.lock.Unlock()
 
 	return len(bp.pool)
 }
 
 func (bp *BlockPool) UpdatePeerBestHeight(height uint64, id string) {
-	bp.mu.Lock()
-	defer bp.mu.Unlock()
+	bp.lock.Lock()
+	defer bp.lock.Unlock()
 	bp.peerBestHeight = height
 	bp.bestPeerID = id
 }

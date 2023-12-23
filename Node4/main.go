@@ -10,7 +10,7 @@ import (
 func main() {
 	// create client
 	//config, err := client.LoadConfig("./config.json")
-	config, err := client.LoadConfig("./Node3/debug.json")
+	config, err := client.LoadConfig("./Node4/debug.json")
 	if err != nil {
 		fmt.Println("load config fail")
 		return

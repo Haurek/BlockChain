@@ -20,8 +20,9 @@ type RecvHandler func(t MessageType, msgBytes []byte, peerID string)
 
 type P2PNet struct {
 	Host       host.Host // local node host
-	protocol   string    // p2p network protocol
-	rendezvous string    // rendezvous string
+	ID         string
+	protocol   string // p2p network protocol
+	rendezvous string // rendezvous string
 	//bootstrapPeers   []multiaddr.Multiaddr // bootstrap peers address
 	//bootstrap        bool                  // is bootstrap peer
 	//kademliaDHT      *dht.IpfsDHT          // KDH table
@@ -66,35 +67,13 @@ func CreateNode(keyPath string, addr string, logPath string) *P2PNet {
 
 	p2pNode := &P2PNet{
 		Host:       host,
+		ID:         host.ID().String(),
 		protocol:   "/chain/1.0.0",
 		rendezvous: "chain-discovery",
 		peerTable:  make(map[string]*P2PStream),
 		callBacks:  make(map[MessageType]RecvHandler),
 		log:        l,
 	}
-
-	//p2pNode.bootstrap = bootstrap
-	//var bootstraps []multiaddr.Multiaddr
-	//if len(bootstrapPeers) == 0 {
-	//	bootstraps = dht.DefaultBootstrapPeers
-	//} else {
-	//	for _, peerAddr := range bootstrapPeers {
-	//		mAddr, err := multiaddr.NewMultiaddr(peerAddr)
-	//		if err != nil {
-	//			return nil
-	//		}
-	//		bootstraps = append(bootstraps, mAddr)
-	//	}
-	//}
-
-	//// Start a DHT, for use in peer discovery
-	//kademliaDHT, err := dht.New(ctx, p2pNode.Host)
-	//if err != nil {
-	//	l.Panic(err)
-	//}
-	//p2pNode.kademliaDHT = kademliaDHT
-	//
-	//p2pNode.routingDiscovery = drouting.NewRoutingDiscovery(kademliaDHT)
 	return p2pNode
 }
 

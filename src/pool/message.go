@@ -25,7 +25,7 @@ const (
 	SyncResponseMsg
 	BlockRequestMsg
 	BlockResponseMsg
-	NewBlockBroadcastMsg
+	//NewBlockBroadcastMsg
 )
 
 type BlockMessage struct {
@@ -58,11 +58,11 @@ type BlockResponseMessage struct {
 	Block  []byte `json:"block"`
 }
 
-type NewBlockMessage struct {
-	Height uint64 `json:"height"`
-	Hash   []byte `json:"hash"`
-	Block  []byte `json:"block"`
-}
+//type NewBlockMessage struct {
+//	Height uint64 `json:"height"`
+//	Hash   []byte `json:"hash"`
+//	Block  []byte `json:"block"`
+//}
 
 // CreateBlockMessage function
 func CreateBlockMessage(t BlockMsgType, data ...interface{}) (interface{}, error) {
@@ -92,11 +92,11 @@ func CreateBlockMessage(t BlockMsgType, data ...interface{}) (interface{}, error
 		if err != nil {
 			return nil, err
 		}
-	case NewBlockBroadcastMsg:
-		msg, err = createNewBlockMessage(data...)
-		if err != nil {
-			return nil, err
-		}
+	//case NewBlockBroadcastMsg:
+	//	msg, err = createNewBlockMessage(data...)
+	//	if err != nil {
+	//		return nil, err
+	//	}
 	default:
 		return nil, fmt.Errorf("unknown message type: %v", t)
 	}
@@ -190,25 +190,25 @@ func createBlockResponseMessage(data ...interface{}) (*BlockResponseMessage, err
 	}, nil
 }
 
-func createNewBlockMessage(data ...interface{}) (*NewBlockMessage, error) {
-	if len(data) != 3 {
-		return nil, fmt.Errorf("invalid number of arguments for NewBlockMessage")
-	}
-
-	height, ok1 := data[0].(uint64)
-	hash, ok2 := data[1].([]byte)
-	block, ok3 := data[2].([]byte)
-
-	if !ok1 || !ok2 || !ok3 {
-		return nil, fmt.Errorf("invalid argument types for NewBlockMessage")
-	}
-
-	return &NewBlockMessage{
-		Height: height,
-		Hash:   hash,
-		Block:  block,
-	}, nil
-}
+//func createNewBlockMessage(data ...interface{}) (*NewBlockMessage, error) {
+//	if len(data) != 3 {
+//		return nil, fmt.Errorf("invalid number of arguments for NewBlockMessage")
+//	}
+//
+//	height, ok1 := data[0].(uint64)
+//	hash, ok2 := data[1].([]byte)
+//	block, ok3 := data[2].([]byte)
+//
+//	if !ok1 || !ok2 || !ok3 {
+//		return nil, fmt.Errorf("invalid argument types for NewBlockMessage")
+//	}
+//
+//	return &NewBlockMessage{
+//		Height: height,
+//		Hash:   hash,
+//		Block:  block,
+//	}, nil
+//}
 
 // SplitMessage spilt PBFTMessage into the message struct corresponding to its type
 func (m *BlockMessage) SplitMessage() (interface{}, BlockMsgType) {
@@ -241,13 +241,13 @@ func (m *BlockMessage) SplitMessage() (interface{}, BlockMsgType) {
 			return nil, DefaultMsg
 		}
 		return blockResMsg, BlockResponseMsg
-	case NewBlockBroadcastMsg:
-		var newBlockMsg NewBlockMessage
-		err := json.Unmarshal(m.Data, &newBlockMsg)
-		if err != nil {
-			return nil, DefaultMsg
-		}
-		return newBlockMsg, NewBlockBroadcastMsg
+	//case NewBlockBroadcastMsg:
+	//	var newBlockMsg NewBlockMessage
+	//	err := json.Unmarshal(m.Data, &newBlockMsg)
+	//	if err != nil {
+	//		return nil, DefaultMsg
+	//	}
+	//	return newBlockMsg, NewBlockBroadcastMsg
 	default:
 		return nil, DefaultMsg
 	}

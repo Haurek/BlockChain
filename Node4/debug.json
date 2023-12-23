@@ -1,0 +1,34 @@
+{
+  "walletCfg": {
+    "pubKeyPath": "./Node4/wallet/public_key.pem",
+    "priKeyPath": "./Node4/wallet/private_key.pem"
+  },
+  "chainCfg": {
+    "chainDataBasePath": "./Node4/database",
+    "maxTxPerBlock": 9,
+    "logPath": "./Node4/log/chain.log"
+  },
+  "p2PNetCfg": {
+    "bootstrapPeers": [],
+    "priKeyPath": "./Node4/wallet/private_key.pem",
+    "bootstrap": false,
+    "listenAddr": "/ip4/127.0.0.1/tcp/6669",
+    "logPath": "./Node4/log/net.log"
+  },
+  "PBFTCfg": {
+    "view": 0,
+    "index": 3,
+    "nodeNum": 4,
+    "maxFaultNode": 1,
+    "logPath": "./Node4/log/pbft.log"
+  },
+  "clientCfg": {
+    "logPath": "./Node4/log/client.log"
+  },
+  "txPoolCfg": {
+    "logPath": "./Node4/log/txpool.log"
+  },
+  "blockPoolCfg": {
+    "logPath": "./Node4/log/blockpool.log"
+  }
+}

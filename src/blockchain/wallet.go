@@ -33,6 +33,11 @@ func (wallet *Wallet) GetPublicKey() *ecdsa.PublicKey {
 	return wallet.publicKey
 }
 
+// GetPrivateKey return wallet private key
+func (wallet *Wallet) GetPrivateKey() *ecdsa.PrivateKey {
+	return wallet.privateKey
+}
+
 // SetAddress set wallet address
 func (wallet *Wallet) SetAddress(address []byte) {
 	wallet.address = address

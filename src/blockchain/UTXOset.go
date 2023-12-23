@@ -4,7 +4,6 @@ import (
 	"BlockChain/src/utils"
 	"badger"
 	"encoding/hex"
-	"errors"
 )
 
 // UTXO type
@@ -149,45 +148,65 @@ func ReindexUTXOSet(utxoDb *badger.DB, utxoMap map[string][]UTXO) {
 }
 
 // UpdateUTXOSet update UTXO set when a new block add to chain
-func UpdateUTXOSet(utxoDb *badger.DB, block *Block) {
+func UpdateUTXOSet(utxoDb *badger.DB, block *Block) bool {
 	for _, tx := range block.Transactions {
-		if tx.IsCoinBase() == false {
-			var utxos []UTXO
-			var newUTXO []UTXO
-			serializeData, err := ReadFromDB(utxoDb, []byte(ChainStateTable), tx.ID)
-			// not found in set
-			// add all output to database
-			if errors.Is(err, badger.ErrKeyNotFound) {
-				var item []UTXO
-				for i, out := range tx.Outputs {
-					utxo := UTXO{
-						Index:  i,
-						Output: out,
-					}
-					item = append(item, utxo)
+		utxoMap := make(map[string][]UTXO)
+		var utxos []UTXO
+		// delete spent output
+		for _, in := range tx.Inputs {
+			id := hex.EncodeToString(in.TxID)
+			if _, ok := utxoMap[id]; !ok {
+				serializeData, err := ReadFromDB(utxoDb, []byte(ChainStateTable), in.TxID)
+				if err != nil {
+					return false
 				}
-				serializeData, err = utils.Serialize(&item)
-				utils.HandleError(err)
-				err = WriteToDB(utxoDb, []byte(ChainStateTable), tx.ID, serializeData)
-				utils.HandleError(err)
-			} else {
 				err = utils.Deserialize(serializeData, &utxos)
-
-				for _, utxo := range utxos {
-					// find input corresponding output
-					for _, in := range tx.Inputs {
-						if in.Index == utxo.Index {
-							break
-						}
-						newUTXO = append(newUTXO, utxo)
-					}
+				if err != nil {
+					return false
 				}
+				utxoMap[id] = utxos
+			}
+			var newUTXOs []UTXO
+			for _, utxo := range utxoMap[id] {
+				// delete input corresponding output
+				if in.Index == utxo.Index {
+					continue
+				}
+				newUTXOs = append(newUTXOs, utxo)
+			}
+			utxoMap[id] = newUTXOs
+		}
+		// add new UTXO from output
+		var newUTXOs []UTXO
+		for i, out := range tx.Outputs {
+			newUTXO := UTXO{
+				Index:  i,
+				Output: out,
+			}
+			newUTXOs = append(newUTXOs, newUTXO)
+		}
+		utxoMap[hex.EncodeToString(tx.ID)] = newUTXOs
 
-				serializeData, err = utils.Serialize(newUTXO)
-				utils.HandleError(err)
-				err = UpdateInDB(utxoDb, []byte(ChainStateTable), tx.ID, serializeData)
-				utils.HandleError(err)
+		// write new UTXOs into database
+		for id, utxo := range utxoMap {
+			txID, err := hex.DecodeString(id)
+			if err != nil {
+				return false
+			}
+			// utxo is empty
+			if utxo == nil {
+				err = DeleteFromDB(utxoDb, []byte(ChainStateTable), txID)
+				continue
+			}
+			serializeData, err := utils.Serialize(utxo)
+			if err != nil {
+				return false
+			}
+			err = UpdateInDB(utxoDb, []byte(ChainStateTable), txID, serializeData)
+			if err != nil {
+				return false
 			}
 		}
 	}
+	return true
 }

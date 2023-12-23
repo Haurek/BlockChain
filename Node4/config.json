@@ -12,12 +12,12 @@
     "bootstrapPeers": [],
     "priKeyPath": "./wallet/private_key.pem",
     "bootstrap": false,
-    "listenAddr": "/ip4/127.0.0.1/tcp/6668",
+    "listenAddr": "/ip4/127.0.0.1/tcp/6669",
     "logPath": "./log/net.log"
   },
   "PBFTCfg": {
     "view": 0,
-    "index": 0,
+    "index": 3,
     "nodeNum": 4,
     "maxFaultNode": 1,
     "logPath": "./log/pbft.log"

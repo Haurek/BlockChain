@@ -4,6 +4,7 @@ import (
 	"BlockChain/src/mycrypto"
 	"BlockChain/src/utils"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 )
@@ -62,7 +63,7 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Trans
 		// decode id
 		txId, err := hex.DecodeString(id)
 		utils.HandleError(err)
-		for index := range indexSet {
+		for _, index := range indexSet {
 			input := NewTXinput(index, wallet.address, txId, wallet.GetPublicKeyBytes())
 			preTx, err := chain.FindTransaction(input.TxID)
 			if err != nil {
@@ -123,9 +124,9 @@ func VerifyTransaction(chain *Chain, Tx *Transaction) bool {
 
 // HashTransaction hash of all inputs and outputs in Tx
 func HashTransaction(tx *Transaction) []byte {
-	txCopy := *tx
+	txCopy := tx.TrimmedCopy()
 	txCopy.ID = []byte{}
-	raw, err := utils.Serialize(txCopy)
+	raw, err := json.Marshal(txCopy)
 	if err != nil {
 		fmt.Println("Error during serialization:", err)
 		return nil
@@ -134,30 +135,19 @@ func HashTransaction(tx *Transaction) []byte {
 	return utils.Sha256Hash(raw)
 }
 
-//// 定义交易信息池结构
-//type TxPool struct {
-//	Transactions []*Transaction
-//}
-//
-//// 创建一个新的交易信息池
-//func NewTxPool() *TxPool {
-//	return &TxPool{
-//		Transactions: make([]*Transaction, MaxTxPoolSize),
-//	}
-//}
-//
-//// 将新的交易添加到交易信息池中
-//func (tp *TxPool) AddTransaction(tx *Transaction) {
-//	tp.Transactions = append(tp.Transactions, tx)
-//}
-//
-//// 获取当前交易信息池中的所有交易
-//func (tp *TxPool) GetTransactions() []*Transaction {
-//	return tp.Transactions
-//}
-//
-//// 清空交易信息池
-//func (tp *TxPool) ClearPool() {
-//	//clear(tp.Transactions)
-//	tp.Transactions = make([]*Transaction, 0)
-//}
+func (tx *Transaction) TrimmedCopy() Transaction {
+	var inputs []TXinput
+	var outputs []TXoutput
+
+	for _, vin := range tx.Inputs {
+		inputs = append(inputs, TXinput{vin.TxID, vin.Index, vin.FromAddress, vin.Signature, vin.PublicKeyBytes})
+	}
+
+	for _, vout := range tx.Outputs {
+		outputs = append(outputs, TXoutput{vout.Value, vout.ToAddress, vout.PublicKeyHash})
+	}
+
+	txCopy := Transaction{tx.ID, inputs, outputs}
+
+	return txCopy
+}

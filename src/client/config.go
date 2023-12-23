@@ -2,10 +2,8 @@ package client
 
 import (
 	"encoding/json"
-	"io"
 	"io/ioutil"
 	"os"
-	"strings"
 )
 
 type ClientCfg struct {
@@ -32,10 +30,10 @@ type P2PNetCfg struct {
 }
 
 type PBFTCfg struct {
-	IsPrimary    bool   `json:"isPrimary"`
 	View         uint64 `json:"view"`
-	WaterHead    uint64 `json:"waterHead"`
-	MaxFaultNode int    `json:"maxFaultNode"`
+	Index        uint64 `json:"index"`
+	NodeNum      uint64 `json:"nodeNum"`
+	MaxFaultNode uint64 `json:"maxFaultNode"`
 	LogPath      string `json:"logPath"`
 }
 
@@ -59,18 +57,7 @@ type Config struct {
 
 func LoadConfig(file string) (*Config, error) {
 	if _, err := os.Stat(file); os.IsNotExist(err) {
-		def, _ := DefaultConfig()
-		cfgValue, err := json.Marshal(def)
-		if err != nil {
-			return def, err
-		}
-		fd, err := os.Create(file)
-		if err != nil {
-			return def, err
-		}
-		defer fd.Close()
-		_, err = io.Copy(fd, strings.NewReader(string(cfgValue)))
-		return def, err
+		return nil, err
 	}
 	f, err := os.Open(file)
 	if err != nil {
@@ -86,41 +73,4 @@ func LoadConfig(file string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
-}
-
-// DefaultConfig 生成一个默认配置
-func DefaultConfig() (*Config, error) {
-	return &Config{
-		WalletCfg{
-			PubKeyPath: "../wallet/public_key.pem",
-			PriKeyPath: "../wallet/private_key.pem",
-		},
-		ChainCfg{
-			ChainDataBasePath: "../database/chain_data",
-			MaxTxPerBlock:     9,
-			LogPath:           "",
-		},
-		P2PNetCfg{
-			BootstrapPeers: []string{},
-			PriKeyPath:     "../wallet/private_key.pem",
-			Bootstrap:      false,
-			LogPath:        "",
-		},
-		PBFTCfg{
-			IsPrimary:    false,
-			View:         0,
-			WaterHead:    3,
-			MaxFaultNode: 1,
-			LogPath:      "",
-		},
-		ClientCfg{
-			LogPath: "",
-		},
-		TxPoolCfg{
-			LogPath: "",
-		},
-		BlockPoolCfg{
-			LogPath: "",
-		},
-	}, nil
 }

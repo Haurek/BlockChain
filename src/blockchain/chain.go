@@ -198,33 +198,63 @@ func (chain *Chain) AddBlock(block *Block) bool {
 		chain.Lock.Lock()
 		chain.Tip = block.Header.Hash
 		chain.BestHeight = block.Header.Height
+		err := WriteToDB(chain.DataBase, []byte(BlockTable), []byte(TipHashKey), block.Header.Hash)
+		if err != nil {
+			defer chain.Lock.Unlock()
+			chain.log.Println("Update tip fail")
+			return false
+		}
 		chain.Lock.Unlock()
+
 		return true
 	}
 	// get previous block from database
 	chain.Lock.Lock()
 	preBlockData, err := ReadFromDB(chain.DataBase, []byte(BlockTable), preHash)
+	if err != nil {
+		defer chain.Lock.Unlock()
+		chain.log.Println("Add block to database fail")
+		return false
+	}
 	chain.Lock.Unlock()
-	utils.HandleError(err)
+
 	var preBlock Block
 	err = utils.Deserialize(preBlockData, &preBlock)
-	utils.HandleError(err)
+	if err != nil {
+		chain.log.Println("Deserialize pre-block fail")
+		return false
+	}
 
 	if bytes.Equal(preBlock.Header.Hash, block.Header.PrevHash) {
 		// add to database
 		serializeData, err := utils.Serialize(block)
-		utils.HandleError(err)
+		if err != nil {
+			chain.log.Println("Serialize block fail")
+			return false
+		}
 		chain.Lock.Lock()
 		err = WriteToDB(chain.DataBase, []byte(BlockTable), block.Header.Hash, serializeData)
-		chain.Lock.Unlock()
-		utils.HandleError(err)
-
-		// update UTXO set
-		UpdateUTXOSet(chain.DataBase, block)
-
+		if err != nil {
+			defer chain.Lock.Unlock()
+			chain.log.Println("Add block to database fail")
+			return false
+		}
 		// update tip
+		err = WriteToDB(chain.DataBase, []byte(BlockTable), []byte(TipHashKey), block.Header.Hash)
+		if err != nil {
+			defer chain.Lock.Unlock()
+			chain.log.Println("Update tip fail")
+			return false
+		}
 		chain.Tip = block.Header.Hash
 		chain.BestHeight += 1
+		chain.Lock.Unlock()
+
+		// update UTXO set
+		ok := UpdateUTXOSet(chain.DataBase, block)
+		if !ok {
+			ReindexUTXOSet(chain.DataBase, chain.FindUTXO())
+		}
 		return true
 	}
 
@@ -326,4 +356,16 @@ func (chain *Chain) FindUTXO() map[string][]UTXO {
 		}
 	}
 	return utxosMap
+}
+
+func (chain *Chain) GetTip() string {
+	chain.Lock.Lock()
+	defer chain.Lock.Unlock()
+	return hex.EncodeToString(chain.Tip)
+}
+
+func (chain *Chain) GetHeight() uint64 {
+	chain.Lock.Lock()
+	defer chain.Lock.Unlock()
+	return chain.BestHeight
 }

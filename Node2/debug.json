@@ -16,9 +16,9 @@
     "logPath": "./Node2/log/net.log"
   },
   "PBFTCfg": {
-    "isPrimary": false,
     "view": 0,
-    "waterHead": 3,
+    "index": 1,
+    "nodeNum": 4,
     "maxFaultNode": 1,
     "logPath": "./Node2/log/pbft.log"
   },

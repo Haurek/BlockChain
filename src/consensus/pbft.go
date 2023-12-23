@@ -2,14 +2,22 @@ package consensus
 
 import (
 	"BlockChain/src/blockchain"
+	"BlockChain/src/mycrypto"
 	p2pnet "BlockChain/src/network"
 	"BlockChain/src/pool"
-	"BlockChain/src/state"
 	"BlockChain/src/utils"
 	"crypto/ecdsa"
 	"encoding/json"
+	"errors"
 	"log"
 	"sync"
+	"time"
+)
+
+const (
+	TxPoolPollingTime  = 10
+	PrimaryNodeTimeout = 20
+	TxPoolFull         = 1
 )
 
 // PBFT type
@@ -18,86 +26,71 @@ import (
 // @param msgQueue: Message queue
 // @param pBFTPeers: peerID -> public key, public key used for verify
 // @param privateKey: used for message sign
-// @param txPool: Transaction Pool
 // @param isStart: pBFT consensus start flag
 // @param isPrimary: primary node flag
 // @param view: current view
 type PBFT struct {
-	fsm              *PBFTFSM
-	msgLog           *MsgLog
-	net              *p2pnet.P2PNet
-	ws               *state.WorldState
-	msgQueue         *MessageQueue
-	primaryID        string
-	selfID           string
-	privateKey       *ecdsa.PrivateKey
-	publicKey        *ecdsa.PublicKey
-	txPool           *pool.TxPool
-	chain            *blockchain.Chain
-	isStart          bool
-	isPrimary        bool
-	view             uint64
-	stableCheckPoint uint64
-	checkPoint       uint64
-	maxFaultNode     uint64
-	lock             sync.Mutex
-	log              *log.Logger
-}
+	id     string
+	engine *PBFTEngine
+	msgLog *MsgLog
 
-// MessageQueue queue of message received from network
-type MessageQueue struct {
-	messages chan *PBFTMessage
-}
+	net        *p2pnet.P2PNet
+	privateKey *ecdsa.PrivateKey
+	publicKey  *ecdsa.PublicKey
+	chain      *blockchain.Chain
+	blockPool  *pool.BlockPool
+	txPool     *pool.TxPool
 
-// NewMessageQueue creat a message queue
-func NewMessageQueue() *MessageQueue {
-	return &MessageQueue{
-		messages: make(chan *PBFTMessage, 100),
-	}
-}
+	isStart   bool
+	isPrimary bool
+	isRunning bool
 
-func (q *MessageQueue) Enqueue(msg *PBFTMessage) {
-	select {
-	case q.messages <- msg:
-		return
-	default:
-		// unable to enqueue, drop the message
-		return
-	}
-}
+	view         uint64
+	index        uint64
+	leaderIndex  uint64
+	nodeNum      uint64
+	maxFaultNode uint64
 
-func (q *MessageQueue) Dequeue() <-chan *PBFTMessage {
-	return q.messages
+	sealerTimer  *time.Timer
+	primaryTimer *time.Timer
+	consensusMsg chan *PBFTMessage
+	lock         sync.Mutex
+	log          *log.Logger
 }
 
 // NewPBFT create pBFT engine
-func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet, chain *blockchain.Chain, logPath string) (*PBFT, error) {
+func NewPBFT(num, index uint64, f uint64, v uint64, tp *pool.TxPool, bp *pool.BlockPool, net *p2pnet.P2PNet, chain *blockchain.Chain, wallet *blockchain.Wallet, logPath string) (*PBFT, error) {
 	// initialize logger
 	l := utils.NewLogger("[pbft] ", logPath)
 
-	var fsm *PBFTFSM
-	if ws.IsPrimary {
-		l.Println("Initialize primary node")
-		fsm = NewFSM(RequestState)
-	} else {
-		l.Println("Initialize replica node")
-		fsm = NewFSM(PrePrepareState)
-	}
 	pbft := &PBFT{
-		fsm:      fsm,
-		msgLog:   NewMsgLog(ws.WaterHead),
-		net:      net,
-		ws:       ws,
-		msgQueue: NewMessageQueue(),
-		//pBFTPeers: make(map[string]*ecdsa.PublicKey),
-		primaryID: ws.PrimaryID,
-		selfID:    net.Host.ID().String(),
-		isPrimary: ws.IsPrimary,
-		txPool:    txPool,
-		chain:     chain,
-		isStart:   false,
-		log:       l,
+		engine:       NewEngine(),
+		msgLog:       NewMsgLog(),
+		net:          net,
+		chain:        chain,
+		publicKey:    wallet.GetPublicKey(),
+		privateKey:   wallet.GetPrivateKey(),
+		blockPool:    bp,
+		txPool:       tp,
+		isStart:      false,
+		isRunning:    false,
+		view:         v,
+		nodeNum:      num,
+		index:        index,
+		maxFaultNode: f,
+		log:          l,
+		consensusMsg: make(chan *PBFTMessage),
 	}
+
+	pbft.id = string(wallet.GetAddress())
+	pbft.leaderIndex = (v + chain.BestHeight) % pbft.nodeNum
+	if pbft.leaderIndex == pbft.index {
+		pbft.isPrimary = true
+	}
+	pbft.sealerTimer = time.NewTimer(TxPoolPollingTime * time.Second)
+	pbft.primaryTimer = time.NewTimer(PrimaryNodeTimeout * time.Second)
+	pbft.sealerTimer.Stop()
+	pbft.primaryTimer.Stop()
 
 	return pbft, nil
 }
@@ -105,18 +98,17 @@ func NewPBFT(ws *state.WorldState, txPool *pool.TxPool, net *p2pnet.P2PNet, chai
 // OnReceive receive callback func
 func (pbft *PBFT) OnReceive(t p2pnet.MessageType, msgBytes []byte, peerID string) {
 	if t != p2pnet.ConsensusMsg {
-		// unable to handler
 		return
 	}
 	// Unmarshal message byte
 	var msg PBFTMessage
 	err := json.Unmarshal(msgBytes, &msg)
 	if err != nil {
-		pbft.log.Println("Unmarshal PBFTMessage failed")
+		pbft.log.Println("Unmarshal PBFTMessage fail")
 		return
 	}
-	// add to message queue
-	pbft.msgQueue.Enqueue(&msg)
+	// run consensus engine
+	pbft.consensusMsg <- &msg
 }
 
 func (pbft *PBFT) Run() {
@@ -125,19 +117,122 @@ func (pbft *PBFT) Run() {
 	// register callback func
 	pbft.net.RegisterCallback(p2pnet.ConsensusMsg, pbft.OnReceive)
 
-	// run consensus
+	if pbft.isPrimary {
+		pbft.sealerTimer.Reset(TxPoolPollingTime * time.Second)
+	} else {
+		pbft.primaryTimer.Reset(PrimaryNodeTimeout * time.Second)
+	}
+
+	// run PBFTEngine
 	for {
 		select {
 		// receive message
-		case msg := <-pbft.msgQueue.Dequeue():
+		case msg := <-pbft.consensusMsg:
 			pbft.log.Println("Receive a PBFT message")
 			if !pbft.isStart {
 				continue
 			}
 			// run FSM handle message
 			pbft.NextState(msg)
+		case <-pbft.primaryTimer.C:
+			// primary node timeout
+			if pbft.isPrimary || !pbft.isStart {
+				pbft.primaryTimer.Reset(PrimaryNodeTimeout * time.Second)
+				continue
+			} else {
+				// raise view change
+			}
+		case <-pbft.sealerTimer.C:
+			pbft.lock.Lock()
+			if !pbft.isPrimary {
+				// not primary node, stop timer
+				pbft.lock.Unlock()
+				pbft.sealerTimer.Stop()
+				continue
+			}
+			if !pbft.isStart || pbft.isRunning {
+				// is running or not start, reset
+				pbft.lock.Unlock()
+				pbft.sealerTimer.Reset(10 * time.Second)
+				continue
+			}
+			pbft.lock.Unlock()
+
+			// check TxPool
+			if pbft.txPool.Count() >= TxPoolFull {
+				// pack block into prepare message
+				msg, err := pbft.PBFTSealer()
+				if err != nil {
+					pbft.log.Println(err)
+					pbft.sealerTimer.Reset(10 * time.Second)
+					continue
+				}
+				// serialize PBFTMessage
+				serialized, err := json.Marshal(msg)
+				if err != nil {
+					pbft.log.Println(err)
+					pbft.sealerTimer.Reset(10 * time.Second)
+					continue
+				}
+				// pack P2P network message
+				p2pMessage := &p2pnet.Message{
+					Type: p2pnet.ConsensusMsg,
+					Data: serialized,
+				}
+				pbft.net.Broadcast(p2pMessage)
+				time.Sleep(10 * time.Millisecond)
+
+				// run PBFTEngine
+				pbft.NextState(msg)
+			} else {
+				pbft.sealerTimer.Reset(10 * time.Second)
+			}
 		}
 	}
+}
+
+// PBFTSealer primary node pack block
+func (pbft *PBFT) PBFTSealer() (*PBFTMessage, error) {
+	// get txs from pool
+	txMap := pbft.txPool.GetTransactions()
+	var txs []*blockchain.Transaction
+	for _, tx := range txMap {
+		txs = append(txs, tx)
+	}
+
+	// pack block
+	newBlock := blockchain.NewBlock(pbft.chain.Tip, txs, pbft.chain.BestHeight+1)
+	blockData, err := json.Marshal(newBlock)
+	if err != nil {
+		return nil, errors.New("Marshal block data fail")
+	}
+
+	// sign
+	signature, err := mycrypto.Sign(pbft.privateKey, newBlock.Header.Hash)
+	if err != nil {
+		return nil, errors.New("Sign message fail")
+	}
+
+	// pack PrePrepareMessage
+	prepare := PrepareMessage{
+		ID:        pbft.id,
+		Height:    newBlock.Header.Height,
+		BlockHash: newBlock.Header.Hash,
+		Block:     blockData,
+		View:      pbft.view,
+		Sign:      signature,
+		PubKey:    mycrypto.PublicKey2Bytes(pbft.publicKey),
+	}
+
+	payload, err := json.Marshal(prepare)
+	if err != nil {
+		return nil, errors.New("marshal error")
+	}
+	pbftMessage := &PBFTMessage{
+		Type: PrepareMsg,
+		Data: payload,
+	}
+	return pbftMessage, nil
 }
 
 func (pbft *PBFT) Start() {
@@ -152,8 +247,14 @@ func (pbft *PBFT) Stop() {
 	pbft.isStart = false
 }
 
-func (pbft *PBFT) AddCheckPoint() {
+func (pbft *PBFT) GetView() uint64 {
 	pbft.lock.Lock()
 	defer pbft.lock.Unlock()
-	pbft.checkPoint++
+	return pbft.view
+}
+
+func (pbft *PBFT) IsPrimary() bool {
+	pbft.lock.Lock()
+	defer pbft.lock.Unlock()
+	return pbft.isPrimary
 }

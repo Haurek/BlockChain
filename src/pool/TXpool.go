@@ -70,7 +70,7 @@ func (tp *TxPool) RemoveTransaction(id string) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 
-	if _, exists := tp.pool[id]; !exists {
+	if _, exists := tp.pool[id]; exists {
 		delete(tp.pool, id)
 		tp.log.Println("Delete Transaction from pool: ", id)
 	}
