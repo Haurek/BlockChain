@@ -20,35 +20,45 @@ type UTXO struct {
 // return UTXO total value
 // map[string][]int: TxID->[unspent output index]
 func FindEnoughUTXOFromSet(utxoDb *badger.DB, address []byte, amount int) (int, map[string][]int) {
+	// utxos stores unspent output indexes for each transaction ID
 	utxos := make(map[string][]int)
+
+	// sum holds the accumulated value of unspent outputs
 	sum := 0
+
+	// Read-only transaction to traverse the UTXO set
 	err := utxoDb.View(func(txn *badger.Txn) error {
+		// Iterator options to enhance performance
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchSize = 10
 		iter := txn.NewIterator(opts)
 		defer iter.Close()
 
-		// traverse UTXO set
+		// Traverse the UTXO set starting from the specified prefix
 		prefix := []byte(ChainStateTable)
 		for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
 			item := iter.Item()
 
-			// get TxID
-			key := item.KeyCopy(nil)[1:]
+			// Extract the transaction ID
+			key := item.KeyCopy(nil)[1:] // Assuming the first byte is skipped for the prefix
 			id := hex.EncodeToString(key)
+
+			// Process the value associated with the key (i.e., the serialized UTXO)
 			err := item.Value(func(val []byte) error {
-				// Deserialize value to []UTXO
+				// Deserialize the value to []UTXO
 				var utxo []UTXO
 				err := utils.Deserialize(val, &utxo)
 				if err != nil {
 					return err
 				}
-				// get UTXO from []UTXO
+
+				// Iterate through the UTXOs
 				for _, out := range utxo {
-					// belong to address
+					// Check if the output belongs to the given address
 					if out.Output.CanBeUnlocked(address) {
+						// Accumulate the value of unspent outputs
 						sum += out.Output.Value
-						// add index
+						// Store the index of the unspent output for the corresponding transaction ID
 						utxos[id] = append(utxos[id], out.Index)
 					}
 				}
@@ -57,45 +67,56 @@ func FindEnoughUTXOFromSet(utxoDb *badger.DB, address []byte, amount int) (int, 
 			if err != nil {
 				return err
 			}
+
+			// Exit the loop if the accumulated sum meets or exceeds the required amount
 			if sum >= amount {
 				break
 			}
 		}
-
 		return nil
 	})
 	utils.HandleError(err)
+
+	// Return the total accumulated sum of unspent outputs and their corresponding indexes
 	if sum >= amount {
 		return sum, utxos
 	} else {
-		return 0, nil
+		return 0, nil // Return zero if there's not enough unspent value
 	}
 }
 
-// GetBalanceFromSet calculate balance of address
+// GetBalanceFromSet calculates the balance of an address by summing up the values of its unspent outputs
 func GetBalanceFromSet(utxoDb *badger.DB, address []byte) int {
+	// Initialize the balance to zero
 	balance := 0
+
+	// Read-only transaction to traverse the UTXO set
 	err := utxoDb.View(func(txn *badger.Txn) error {
+		// Iterator options to enhance performance
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchSize = 10
 		iter := txn.NewIterator(opts)
 		defer iter.Close()
 
+		// Seek to the prefix associated with the UTXO set
 		prefix := []byte(ChainStateTable)
 		for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
 			item := iter.Item()
 
+			// Process the value associated with the key (i.e., the serialized UTXO)
 			err := item.Value(func(val []byte) error {
-				// Deserialize value to []UTXO
+				// Deserialize the value to []UTXO
 				var utxo []UTXO
 				err := utils.Deserialize(val, &utxo)
 				if err != nil {
 					return err
 				}
-				// get UTXO from []UTXO
+
+				// Iterate through the UTXOs
 				for _, out := range utxo {
-					// belong to address
+					// Check if the output belongs to the given address
 					if out.Output.CanBeUnlocked(address) {
+						// Accumulate the value of unspent outputs
 						balance += out.Output.Value
 					}
 				}
@@ -105,18 +126,18 @@ func GetBalanceFromSet(utxoDb *badger.DB, address []byte) int {
 				return err
 			}
 		}
-
 		return nil
 	})
 	utils.HandleError(err)
 
+	// Return the calculated balance for the given address
 	return balance
 }
 
-// ReindexUTXOSet update UTXO set
-// utxoMap from chain.FindUTXO
+// ReindexUTXOSet updates the UTXO set in the database with a new set of UTXOs
+// utxoMap represents the updated UTXO set obtained from chain.FindUTXO
 func ReindexUTXOSet(utxoDb *badger.DB, utxoMap map[string][]UTXO) {
-	// delete all UTXO item from database
+	// Delete all existing UTXO items from the database
 	err := utxoDb.Update(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchSize = 10
@@ -133,7 +154,7 @@ func ReindexUTXOSet(utxoDb *badger.DB, utxoMap map[string][]UTXO) {
 			}
 		}
 
-		// add new UTXO item to database
+		// Add the new UTXO items to the database
 		for id, utxos := range utxoMap {
 			txId, err := hex.DecodeString(id)
 			utils.HandleError(err)
@@ -147,12 +168,13 @@ func ReindexUTXOSet(utxoDb *badger.DB, utxoMap map[string][]UTXO) {
 	utils.HandleError(err)
 }
 
-// UpdateUTXOSet update UTXO set when a new block add to chain
+// UpdateUTXOSet updates the UTXO set when a new block is added to the blockchain
 func UpdateUTXOSet(utxoDb *badger.DB, block *Block) bool {
 	for _, tx := range block.Transactions {
 		utxoMap := make(map[string][]UTXO)
 		var utxos []UTXO
-		// delete spent output
+
+		// Delete spent outputs and update UTXO map
 		for _, in := range tx.Inputs {
 			id := hex.EncodeToString(in.TxID)
 			if _, ok := utxoMap[id]; !ok {
@@ -168,7 +190,7 @@ func UpdateUTXOSet(utxoDb *badger.DB, block *Block) bool {
 			}
 			var newUTXOs []UTXO
 			for _, utxo := range utxoMap[id] {
-				// delete input corresponding output
+				// Delete the input corresponding to the output
 				if in.Index == utxo.Index {
 					continue
 				}
@@ -176,7 +198,8 @@ func UpdateUTXOSet(utxoDb *badger.DB, block *Block) bool {
 			}
 			utxoMap[id] = newUTXOs
 		}
-		// add new UTXO from output
+
+		// Add new UTXOs from transaction outputs to the UTXO map
 		var newUTXOs []UTXO
 		for i, out := range tx.Outputs {
 			newUTXO := UTXO{
@@ -187,13 +210,13 @@ func UpdateUTXOSet(utxoDb *badger.DB, block *Block) bool {
 		}
 		utxoMap[hex.EncodeToString(tx.ID)] = newUTXOs
 
-		// write new UTXOs into database
+		// Write the updated UTXOs into the database
 		for id, utxo := range utxoMap {
 			txID, err := hex.DecodeString(id)
 			if err != nil {
 				return false
 			}
-			// utxo is empty
+			// If the UTXO is empty, delete it from the database
 			if utxo == nil {
 				err = DeleteFromDB(utxoDb, []byte(ChainStateTable), txID)
 				continue

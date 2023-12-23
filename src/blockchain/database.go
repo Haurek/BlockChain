@@ -4,6 +4,7 @@ import (
 	"badger"
 )
 
+// OpenDatabase opens a BadgerDB database at the specified path
 func OpenDatabase(dbPath string) (*badger.DB, error) {
 	opts := badger.DefaultOptions(dbPath)
 	opts.Logger = nil
@@ -11,7 +12,7 @@ func OpenDatabase(dbPath string) (*badger.DB, error) {
 	return db, err
 }
 
-// WriteToDB write key-value to database
+// WriteToDB writes a key-value pair to the database with a specified table prefix
 func WriteToDB(db *badger.DB, tablePrefix, key, value []byte) error {
 	return db.Update(func(txn *badger.Txn) error {
 		err := txn.Set(append(tablePrefix, key...), value)
@@ -19,7 +20,7 @@ func WriteToDB(db *badger.DB, tablePrefix, key, value []byte) error {
 	})
 }
 
-// ReadFromDB read value from database
+// ReadFromDB reads a value from the database using the specified table prefix and key
 func ReadFromDB(db *badger.DB, tablePrefix, key []byte) ([]byte, error) {
 	var value []byte
 	err := db.View(func(txn *badger.Txn) error {
@@ -37,7 +38,7 @@ func ReadFromDB(db *badger.DB, tablePrefix, key []byte) ([]byte, error) {
 	return value, err
 }
 
-// UpdateInDB update value
+// UpdateInDB updates a value in the database using the specified table prefix and key
 func UpdateInDB(db *badger.DB, tablePrefix, key, updatedValue []byte) error {
 	return db.Update(func(txn *badger.Txn) error {
 		err := txn.Set(append(tablePrefix, key...), updatedValue)
@@ -45,7 +46,7 @@ func UpdateInDB(db *badger.DB, tablePrefix, key, updatedValue []byte) error {
 	})
 }
 
-// DeleteFromDB delete value
+// DeleteFromDB deletes a value from the database using the specified table prefix and key
 func DeleteFromDB(db *badger.DB, tablePrefix, key []byte) error {
 	return db.Update(func(txn *badger.Txn) error {
 		err := txn.Delete(append(tablePrefix, key...))

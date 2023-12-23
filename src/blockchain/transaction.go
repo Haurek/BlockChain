@@ -9,19 +9,19 @@ import (
 	"fmt"
 )
 
-// Transaction include inputs and outputs
+// Transaction represents a collection of inputs and outputs in a transaction
 type Transaction struct {
-	ID      []byte     `json:"ID"`
-	Inputs  []TXinput  `json:"Inputs"`
-	Outputs []TXoutput `json:"Outputs"`
+	ID      []byte     `json:"ID"`      // ID represents the unique identifier for the transaction
+	Inputs  []TXinput  `json:"Inputs"`  // Inputs include the details of the transaction inputs
+	Outputs []TXoutput `json:"Outputs"` // Outputs include the details of the transaction outputs
 }
 
-// IsCoinBase check coinbase transaction
+// IsCoinBase checks if the transaction is a coinbase transaction
 func (Tx *Transaction) IsCoinBase() bool {
 	return len(Tx.Inputs) == 1 && Tx.Inputs[0].Index == -1
 }
 
-// NewCoinbaseTx create coinbase transaction
+// NewCoinbaseTx creates a coinbase transaction, used to reward miners
 func NewCoinbaseTx(to []byte, reward int) *Transaction {
 	input := TXinput{
 		TxID:           []byte{},
@@ -40,27 +40,25 @@ func NewCoinbaseTx(to []byte, reward int) *Transaction {
 	return Tx
 }
 
-// NewTransaction create new transaction
+// NewTransaction creates a new transaction transferring a specified amount between wallets
 func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Transaction, error) {
-	// check valid address
+	// Check the validity of the addresses and the amount
 	if !CheckAddress(wallet.address) || !CheckAddress(to) {
 		return nil, errors.New("wrong address")
 	}
-	// check valid amount
 	if amount <= 0 {
 		return nil, errors.New("wrong amount")
 	}
 
-	// Find enough UTXO from UTXO set by wallet address
+	// Find enough Unspent Transaction Outputs (UTXOs) from the UTXO set by the wallet's address
 	balance, utxosMap := FindEnoughUTXOFromSet(chain.DataBase, wallet.address, amount)
 	if balance < amount {
 		return nil, errors.New("Not enough balance")
 	}
 
-	// build inputs
 	var inputs []TXinput
 	for id, indexSet := range utxosMap {
-		// decode id
+		// Decode the transaction ID
 		txId, err := hex.DecodeString(id)
 		utils.HandleError(err)
 		for _, index := range indexSet {
@@ -69,7 +67,7 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Trans
 			if err != nil {
 				return nil, errors.New("fail to find previous Tx")
 			}
-			// sign input
+			// Sign the input using the wallet's private key
 			message := HashTransaction(preTx)
 			sig, err := mycrypto.Sign(wallet.privateKey, message)
 			utils.HandleError(err)
@@ -78,12 +76,11 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Trans
 		}
 	}
 
-	// build outputs
 	var outputs []TXoutput
 	output := NewTXoutput(amount, to)
 	outputs = append(outputs, *output)
 
-	// change
+	// Calculate the change if the wallet has more balance than the transaction amount
 	if balance > amount {
 		change := NewTXoutput(balance-amount, wallet.GetAddress())
 		outputs = append(outputs, *change)
@@ -97,22 +94,22 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Trans
 	return Tx, nil
 }
 
-// VerifyTransaction verify each input of transaction before pack a block
+// VerifyTransaction verifies each input of a transaction before adding it to a block
 func VerifyTransaction(chain *Chain, Tx *Transaction) bool {
-	// coinbase
+	// Check if it's a coinbase transaction
 	if Tx.IsCoinBase() == true {
 		return true
 	}
 
 	for _, input := range Tx.Inputs {
-		// find previous Tx of input
+		// Find the previous transaction for each input
 		preTx, err := chain.FindTransaction(input.TxID)
 		if err != nil {
 			fmt.Println("fail to find previous Tx")
 			return false
 		}
 
-		// verify signature
+		// Verify the signature for each input
 		signature := input.Signature
 		message := HashTransaction(preTx)
 		if mycrypto.Verify(mycrypto.Bytes2PublicKey(input.PublicKeyBytes), message, signature) == false {
@@ -122,7 +119,7 @@ func VerifyTransaction(chain *Chain, Tx *Transaction) bool {
 	return true
 }
 
-// HashTransaction hash of all inputs and outputs in Tx
+// HashTransaction computes the hash of a transaction using its inputs and outputs
 func HashTransaction(tx *Transaction) []byte {
 	txCopy := tx.TrimmedCopy()
 	txCopy.ID = []byte{}
@@ -135,6 +132,7 @@ func HashTransaction(tx *Transaction) []byte {
 	return utils.Sha256Hash(raw)
 }
 
+// TrimmedCopy creates a copy of the transaction with trimmed inputs and outputs
 func (tx *Transaction) TrimmedCopy() Transaction {
 	var inputs []TXinput
 	var outputs []TXoutput

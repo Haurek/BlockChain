@@ -77,49 +77,59 @@ func CreateNode(keyPath string, addr string, logPath string) *P2PNet {
 	return p2pNode
 }
 
-// StartNode start a p2p node and discovery other node
+// StartNode starts a P2P node and discovers other nodes.
 func (node *P2PNet) StartNode() {
-
 	node.log.Println("Start p2p node")
-	// register stream handler func
+
+	// Register stream handler function.
 	node.Host.SetStreamHandler(protocol.ID(node.protocol), node.handleStream)
 
 	ctx := context.Background()
 	node.log.Println("Initialize mDNS")
+
+	// Initialize MDNS service to discover other peers.
 	peerChan := initMDNS(node.Host, node.rendezvous)
 	for {
+		// Listen for discovered peers.
 		info := <-peerChan
 		node.log.Println("Found peer:", info, ", connecting")
 
+		// Connect to the discovered peer.
 		if err := node.Host.Connect(ctx, info); err != nil {
 			node.log.Println("Connection failed:", err)
 			continue
 		}
 
+		// Create a new stream to communicate with the peer.
 		stream, err := node.Host.NewStream(context.Background(), info.ID, protocol.ID(node.protocol))
 		if err != nil {
 			node.log.Println("Connection failed:", err)
 			continue
 		} else {
 			node.log.Println("Connected to peer:", info)
-			p2pStaeam := &P2PStream{
+
+			// Initialize the P2PStream for this peer.
+			p2pStream := &P2PStream{
 				peerID:          info.ID.String(),
 				stream:          stream,
 				MessageChan:     make(chan *Message),
 				closeReadStrem:  make(chan struct{}, 1),
 				closeWriteStrem: make(chan struct{}, 1),
 			}
+
 			node.Lock()
 			node.log.Printf("add peer %s", info.ID.String())
-			node.peerTable[info.ID.String()] = p2pStaeam
+			node.peerTable[info.ID.String()] = p2pStream
 			node.Unlock()
-			go node.recvData(p2pStaeam)
-			go node.sendData(p2pStaeam)
+
+			// Start goroutines to handle receiving and sending data for this peer.
+			go node.recvData(p2pStream)
+			go node.sendData(p2pStream)
 		}
 	}
 }
 
-// Broadcast message to all peers
+// Broadcast sends a message to all connected peers.
 func (node *P2PNet) Broadcast(msg *Message) error {
 	for id := range node.peerTable {
 		err := node.BroadcastToPeer(msg, id)
@@ -130,7 +140,7 @@ func (node *P2PNet) Broadcast(msg *Message) error {
 	return nil
 }
 
-// BroadcastToPeer broadcast message to a peer
+// BroadcastToPeer sends a message to a specific peer.
 func (node *P2PNet) BroadcastToPeer(msg *Message, peerID string) error {
 	stream, ok := node.peerTable[peerID]
 	if !ok {
@@ -138,9 +148,10 @@ func (node *P2PNet) BroadcastToPeer(msg *Message, peerID string) error {
 	}
 	go func() {
 		select {
-		// send message
+		// Send message to the peer's message channel.
 		case stream.MessageChan <- msg:
 			node.log.Printf("send message to peer: %s, type: %v", peerID, msg.Type)
+		// Handle timeout if the sending operation takes too long.
 		case <-time.After(1 * time.Minute):
 			node.log.Println("Timeout!: %s", peerID)
 			return
@@ -149,13 +160,13 @@ func (node *P2PNet) BroadcastToPeer(msg *Message, peerID string) error {
 	return nil
 }
 
-// BroadcastExceptPeer broadcast message to all peers except p
+// BroadcastExceptPeer sends a message to all peers except the specified peer.
 func (node *P2PNet) BroadcastExceptPeer(msg *Message, peerID string) error {
 	for id := range node.peerTable {
-		if id == id {
+		if id == peerID {
 			continue
 		}
-		err := node.BroadcastToPeer(msg, peerID)
+		err := node.BroadcastToPeer(msg, id)
 		if err != nil {
 			node.log.Println(err.Error())
 		}
@@ -163,7 +174,7 @@ func (node *P2PNet) BroadcastExceptPeer(msg *Message, peerID string) error {
 	return nil
 }
 
-// RegisterCallback register callback func
+// RegisterCallback registers a callback function for a specific message type.
 func (node *P2PNet) RegisterCallback(t MessageType, callback RecvHandler) {
 	node.log.Printf("Register Callback func type: %v", t)
 	node.Lock()

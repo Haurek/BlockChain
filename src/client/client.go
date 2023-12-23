@@ -16,6 +16,7 @@ import (
 	"sync"
 )
 
+// Client represents a blockchain client
 type Client struct {
 	chain     *blockchain.Chain
 	network   *p2pnet.P2PNet
@@ -27,7 +28,7 @@ type Client struct {
 	log       *log.Logger
 }
 
-// CreateClient create a new client
+// CreateClient creates a new client
 func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*Client, error) {
 	// initialize log
 	l := utils.NewLogger("[client] ", config.ClientCfg.LogPath)
@@ -60,26 +61,26 @@ func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*C
 	return client, nil
 }
 
-// Run the client
+// Run executes the client operations, including running the various components.
 func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
-	// run p2p net
+	// Start the p2p network
 	c.log.Println("Run p2p net")
 	go c.network.StartNode()
 
-	// run pBFT consensus
+	// Run pBFT consensus
 	c.log.Println("Run pBFT consensus")
 	go c.consensus.Run()
 
-	// run transaction pool
+	// Run transaction pool
 	c.log.Println("Run Transaction Pool")
 	go c.txPool.Run()
 
-	// start block sync
+	// Start block synchronization
 	c.log.Println("Run Block Pool")
 	go c.blockPool.Run()
 
 	var cmd string
-	defer wg.Done()
+	defer wg.Done() // Mark the WaitGroup as done when this function exits
 	for {
 		fmt.Println("\nPlease input your command:")
 		var input string
@@ -88,26 +89,20 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 			input = scanner.Text()
 		}
 
-		// 将输入字符串按空格拆分为命令和参数
+		// Split the input string into command and arguments
 		parts := strings.Fields(input)
 		if len(parts) == 0 {
-			c.Usages()
+			c.Usages() // Display usage instructions if no command is entered
 		} else {
 			cmd = parts[0]
 			switch cmd {
-			case "exit":
-				fallthrough
-			case "q":
-				close(exitChan)
-				return nil
-			case "help":
-				fallthrough
-			case "h":
-				c.Usages()
-
-			case "transaction":
-				fallthrough
-			case "tx":
+			case "exit", "q":
+				close(exitChan) // Close the exit channel to signal shutdown
+				return nil      // Exit the Run function
+			case "help", "h":
+				c.Usages() // Display usage instructions
+			case "transaction", "tx":
+				// Process transaction command
 				if len(parts) == 3 {
 					amount, err := strconv.Atoi(parts[1])
 					if err != nil {
@@ -115,16 +110,13 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 					} else if toAddress := []byte(parts[2]); err != nil {
 						fmt.Println("wrong address")
 					} else {
-						c.CreateTransaction(amount, toAddress)
+						c.CreateTransaction(amount, toAddress) // Create a transaction
 					}
 				} else {
 					fmt.Println("Please input address and amount")
 				}
-
-			case "status":
-				fallthrough
-			case "s":
-				c.ShowStatus()
+			case "status", "s":
+				c.ShowStatus() // Display the status of the client
 			default:
 				fmt.Println("Unknown command, use \"help\" or \"h\" for usage")
 			}
@@ -132,22 +124,26 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 	}
 }
 
-// CreateTransaction create a transaction and broadcast to peers
+// CreateTransaction creates a transaction with specified amount and recipient address,
+// adds it to the local transaction pool, and broadcasts it to connected peers.
 func (c *Client) CreateTransaction(amount int, to []byte) {
+	// Create a new transaction using the client's wallet and blockchain
 	tx, err := blockchain.NewTransaction(c.wallet, c.chain, to, amount)
 	if err != nil {
-		return
+		return // If creating transaction fails, exit function
 	}
-	// add Tx to local TxPool
+
+	// Add the transaction to the local transaction pool
 	c.txPool.AddTransaction(tx)
 
-	// broadcast transaction to peers
+	// Marshal the transaction to JSON for broadcasting
 	txByte, err := json.Marshal(tx)
 	if err != nil {
 		c.log.Println("Marshal transaction failed")
-		return
+		return // If marshaling fails, exit function
 	}
 
+	// Create a message containing the transaction and its type
 	txMessage := pool.TxMessage{
 		Type:    pool.SendTxMsg,
 		TxBytes: txByte,
@@ -155,13 +151,16 @@ func (c *Client) CreateTransaction(amount int, to []byte) {
 	payload, err := json.Marshal(txMessage)
 	if err != nil {
 		c.log.Println("Marshal TxMessage failed")
-		return
+		return // If marshaling fails, exit function
 	}
 
+	// Create a P2P message containing the transaction payload and type
 	msg := &p2pnet.Message{
 		Type: p2pnet.TransactionMsg,
 		Data: payload,
 	}
+
+	// Broadcast the transaction message to connected peers
 	c.network.Broadcast(msg)
 }
 
@@ -170,22 +169,27 @@ func (c *Client) GetBalance() int {
 	return blockchain.GetBalanceFromSet(c.chain.DataBase, c.wallet.GetAddress())
 }
 
-// ShowStatus show status of the blockchain
+// ShowStatus displays the status of the blockchain, wallet, network, and consensus components.
 func (c *Client) ShowStatus() {
+	// Display wallet information
 	fmt.Println("Address: ", string(c.wallet.GetAddress()))
 	fmt.Println("Balance: ", c.GetBalance())
 
+	// Display blockchain status
 	fmt.Println("\nBlockChain Status:")
 	fmt.Println("Height: ", c.chain.GetHeight())
 	fmt.Println("Tip: ", c.chain.GetTip())
 
+	// Display network status
 	fmt.Println("\nNetwork Status: ")
 	fmt.Println("Host ID: ", c.network.Host.ID().String())
 
+	// Display pool status (transaction and block pools)
 	fmt.Println("\nPoolStatus: ")
 	fmt.Println("TxPool count: ", c.txPool.Count())
-	fmt.Println("BlocKPool count: ", c.blockPool.Count())
+	fmt.Println("BlockPool count: ", c.blockPool.Count())
 
+	// Display pBFT consensus status
 	fmt.Println("\npBFT consensus status: ")
 	if c.consensus.IsPrimary() {
 		fmt.Println("Is Primary Node: true")
@@ -195,8 +199,10 @@ func (c *Client) ShowStatus() {
 	fmt.Println("View: ", c.consensus.GetView())
 }
 
+// Usages displays usage instructions for the client's command-line interface.
 func (c *Client) Usages() {
 	fmt.Println("Usages:")
-	fmt.Println("exit, q: Exit the block chain")
+	fmt.Println("exit, q: Exit the blockchain client")
 	fmt.Println("balance, b: Check balance")
+	// Add more usage instructions as needed for other commands
 }

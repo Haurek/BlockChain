@@ -6,6 +6,9 @@ import (
 	"os"
 )
 
+// Configurations for different aspects of the blockchain client.
+// These structures define the configuration options for various components.
+
 type ClientCfg struct {
 	LogPath string `json:"logPath"`
 }
@@ -55,22 +58,33 @@ type Config struct {
 	BlockPoolCfg `json:"blockPoolCfg"`
 }
 
+// LoadConfig loads the configuration from a JSON file.
+// It reads the provided file, parses its content into a Config struct, and returns it.
 func LoadConfig(file string) (*Config, error) {
+	// Check if the file exists
 	if _, err := os.Stat(file); os.IsNotExist(err) {
 		return nil, err
 	}
+
+	// Open the file for reading
 	f, err := os.Open(file)
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
+
+	// Read the file content
 	content, err := ioutil.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}
+
+	// Unmarshal the JSON content into a Config struct
 	var cfg Config
 	err = json.Unmarshal(content, &cfg)
 	if err != nil {
 		return nil, err
 	}
+
 	return &cfg, nil
 }

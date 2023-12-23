@@ -5,31 +5,34 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 )
 
-// handleStream handler peer stream
+// handleStream handles incoming peer streams and initializes P2PStream for communication.
 func (node *P2PNet) handleStream(stream network.Stream) {
-	// create P2PStream struct
-	p2pStaeam := &P2PStream{
+	// Create P2PStream struct
+	p2pStream := &P2PStream{
 		peerID:          stream.Conn().RemotePeer().String(),
 		stream:          stream,
 		MessageChan:     make(chan *Message, 0),
 		closeReadStrem:  make(chan struct{}, 1),
 		closeWriteStrem: make(chan struct{}, 1),
 	}
+
+	// Add P2PStream to peerTable
 	node.Lock()
-	node.peerTable[p2pStaeam.peerID] = p2pStaeam
+	node.peerTable[p2pStream.peerID] = p2pStream
 	node.Unlock()
 
-	go node.recvData(p2pStaeam)
-	go node.sendData(p2pStaeam)
+	go node.recvData(p2pStream) // Start receiving data
+	go node.sendData(p2pStream) // Start sending data
 }
 
+// recvData handles receiving data from the peer stream.
 func (node *P2PNet) recvData(stream *P2PStream) {
 	rw := bufio.NewReader(stream.stream)
 
 outLoop:
 	for {
 		select {
-		// receive close flag
+		// Receive close flag
 		case <-stream.closeReadStrem:
 			stream.stream.Conn().Close()
 			node.Lock()
@@ -64,20 +67,21 @@ outLoop:
 	}
 }
 
+// sendData handles sending data through the peer stream.
 func (node *P2PNet) sendData(stream *P2PStream) {
 	rw := bufio.NewWriter(stream.stream)
 
 outLoop:
 	for {
 		select {
-		// receive close flag
+		// Receive close flag
 		case <-stream.closeWriteStrem:
 			stream.stream.Conn().Close()
 			node.Lock()
 			delete(node.peerTable, stream.peerID)
 			node.Unlock()
 			return
-		// send message
+			// Send message
 		case msg := <-stream.MessageChan:
 			node.log.Printf("send message to: %s", stream.peerID)
 			msgBuf, err := PackMessage(msg)

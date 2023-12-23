@@ -78,7 +78,7 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 			next, err := pbft.handleCommit(&commit)
 			if next {
 				// reset State
-				pbft.ResetSate()
+				pbft.ResetState()
 				// update status
 				pbft.lock.Lock()
 				// primary node change
@@ -259,27 +259,33 @@ func (pbft *PBFT) handleCommit(commit *CommitMessage) (bool, error) {
 	return false, nil
 }
 
+// SetState sets the state of the PBFT consensus engine to the provided state.
 func (pbft *PBFT) SetState(s State) {
-	pbft.engine.lock.Lock()
-	defer pbft.engine.lock.Unlock()
-	pbft.engine.currentState = s
+	pbft.engine.lock.Lock()         // Lock to ensure thread safety during state modification
+	defer pbft.engine.lock.Unlock() // Release the lock after function execution
+	pbft.engine.currentState = s    // Update the current state to the provided state
 }
 
+// GetState retrieves the current state of the PBFT consensus engine.
 func (pbft *PBFT) GetState() State {
-	pbft.engine.lock.Lock()
-	defer pbft.engine.lock.Unlock()
-	return pbft.engine.currentState
+	pbft.engine.lock.Lock()         // Lock to ensure thread safety during state retrieval
+	defer pbft.engine.lock.Unlock() // Release the lock after function execution
+	return pbft.engine.currentState // Return the current state
 }
 
-func (pbft *PBFT) ResetSate() {
-	pbft.engine.lock.Lock()
-	defer pbft.engine.lock.Unlock()
-	pbft.engine.currentState = PrePrepareState
+// ResetState resets the state of the PBFT consensus engine to the PrePrepareState.
+func (pbft *PBFT) ResetState() {
+	pbft.engine.lock.Lock()                    // Lock to ensure thread safety during state reset
+	defer pbft.engine.lock.Unlock()            // Release the lock after function execution
+	pbft.engine.currentState = PrePrepareState // Set the current state to PrePrepareState
 }
 
+// packBroadcastMessage prepares a P2P network message by packaging a PBFT message with its corresponding type.
 func (pbft *PBFT) packBroadcastMessage(t PBFTMsgType, msg interface{}) (*p2pnet.Message, error) {
 	var payload []byte
 	var err error
+
+	// Determine the PBFT message type and marshal the message to JSON payload
 	switch t {
 	case PrepareMsg:
 		if m, ok := msg.(PrepareMessage); ok {
@@ -311,16 +317,19 @@ func (pbft *PBFT) packBroadcastMessage(t PBFTMsgType, msg interface{}) (*p2pnet.
 		}
 	}
 
+	// Create a PBFTMessage containing the type and data payload
 	pbftMessage := PBFTMessage{
 		Type: t,
 		Data: payload,
 	}
-	// serialize PBFTMessage
+
+	// Serialize the PBFTMessage to JSON
 	serialized, err := json.Marshal(pbftMessage)
 	if err != nil {
 		return nil, err
 	}
-	// pack P2P network message
+
+	// Pack the PBFT message into a P2P network message
 	p2pMessage := &p2pnet.Message{
 		Type: p2pnet.ConsensusMsg,
 		Data: serialized,

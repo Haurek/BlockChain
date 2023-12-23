@@ -235,26 +235,30 @@ func (pbft *PBFT) PBFTSealer() (*PBFTMessage, error) {
 	return pbftMessage, nil
 }
 
+// Start sets the PBFT process as started by setting the corresponding flag.
 func (pbft *PBFT) Start() {
 	pbft.lock.Lock()
 	defer pbft.lock.Unlock()
-	pbft.isStart = true
+	pbft.isStart = true // Set the PBFT process as started
 }
 
+// Stop sets the PBFT process as stopped by setting the corresponding flag.
 func (pbft *PBFT) Stop() {
 	pbft.lock.Lock()
 	defer pbft.lock.Unlock()
-	pbft.isStart = false
+	pbft.isStart = false // Set the PBFT process as stopped
 }
 
+// GetView retrieves the current view of the PBFT process.
 func (pbft *PBFT) GetView() uint64 {
 	pbft.lock.Lock()
 	defer pbft.lock.Unlock()
-	return pbft.view
+	return pbft.view // Retrieve the current view
 }
 
+// IsPrimary checks if the PBFT node is acting as a primary node.
 func (pbft *PBFT) IsPrimary() bool {
 	pbft.lock.Lock()
 	defer pbft.lock.Unlock()
-	return pbft.isPrimary
+	return pbft.isPrimary // Check if the PBFT node is a primary node
 }

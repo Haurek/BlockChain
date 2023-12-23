@@ -58,42 +58,42 @@ type ViewChangeMessage struct {
 	ID string `json:"id"`
 }
 
-// SplitMessage spilt PBFTMessage into the message struct corresponding to its type
+// SplitMessage splits the PBFTMessage into the corresponding message struct based on its type.
 func (m *PBFTMessage) SplitMessage() (interface{}, PBFTMsgType) {
 	switch m.Type {
 	case SignMsg:
 		var sMsg SignMessage
 		err := json.Unmarshal(m.Data, &sMsg)
 		if err != nil {
-			return nil, DefaultMsg
+			return nil, DefaultMsg // Return default message type on unmarshal error
 		}
-		return sMsg, SignMsg
+		return sMsg, SignMsg // Return the SignMessage and its corresponding message type
 
 	case PrepareMsg:
 		var pMsg PrepareMessage
 		err := json.Unmarshal(m.Data, &pMsg)
 		if err != nil {
-			return nil, DefaultMsg
+			return nil, DefaultMsg // Return default message type on unmarshal error
 		}
-		return pMsg, PrepareMsg
+		return pMsg, PrepareMsg // Return the PrepareMessage and its corresponding message type
 
 	case CommitMsg:
 		var cMsg CommitMessage
 		err := json.Unmarshal(m.Data, &cMsg)
 		if err != nil {
-			return nil, DefaultMsg
+			return nil, DefaultMsg // Return default message type on unmarshal error
 		}
-		return cMsg, CommitMsg
+		return cMsg, CommitMsg // Return the CommitMessage and its corresponding message type
 
 	case ViewChangeMsg:
 		var vcMsg ViewChangeMessage
 		err := json.Unmarshal(m.Data, &vcMsg)
 		if err != nil {
-			return nil, DefaultMsg
+			return nil, DefaultMsg // Return default message type on unmarshal error
 		}
-		return vcMsg, ViewChangeMsg
+		return vcMsg, ViewChangeMsg // Return the ViewChangeMessage and its corresponding message type
 
 	default:
-		return nil, DefaultMsg
+		return nil, DefaultMsg // Return default message type for unknown PBFTMsgType
 	}
 }

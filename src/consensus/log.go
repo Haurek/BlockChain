@@ -2,7 +2,7 @@ package consensus
 
 import "sync"
 
-// MsgLog consensus message cache
+// MsgLog represents a cache for consensus messages.
 type MsgLog struct {
 	prepares map[string]*PrepareMessage
 	signs    map[string]*SignMessage
@@ -11,6 +11,7 @@ type MsgLog struct {
 	lock     sync.Mutex
 }
 
+// NewMsgLog creates and initializes a new MsgLog instance.
 func NewMsgLog() *MsgLog {
 	log := &MsgLog{
 		prepares: make(map[string]*PrepareMessage),
@@ -21,6 +22,7 @@ func NewMsgLog() *MsgLog {
 	return log
 }
 
+// AddMessage adds a message of a specific type to the MsgLog cache.
 func (l *MsgLog) AddMessage(msgType PBFTMsgType, data interface{}) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
@@ -49,6 +51,7 @@ func (l *MsgLog) AddMessage(msgType PBFTMsgType, data interface{}) {
 	}
 }
 
+// HaveLog checks if a specific type of message with a given ID exists in the MsgLog cache.
 func (l *MsgLog) HaveLog(msgType PBFTMsgType, id string) bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
@@ -70,6 +73,7 @@ func (l *MsgLog) HaveLog(msgType PBFTMsgType, id string) bool {
 	return false
 }
 
+// GetPrepareLog retrieves a PrepareMessage from the MsgLog cache using its ID.
 func (l *MsgLog) GetPrepareLog(id string) *PrepareMessage {
 	l.lock.Lock()
 	defer l.lock.Unlock()
@@ -77,6 +81,7 @@ func (l *MsgLog) GetPrepareLog(id string) *PrepareMessage {
 	return l.prepares[id]
 }
 
+// GetCommitLog retrieves a CommitMessage from the MsgLog cache using its ID.
 func (l *MsgLog) GetCommitLog(id string) *CommitMessage {
 	l.lock.Lock()
 	defer l.lock.Unlock()
@@ -84,6 +89,7 @@ func (l *MsgLog) GetCommitLog(id string) *CommitMessage {
 	return l.commits[id]
 }
 
+// GetSignLog retrieves a SignMessage from the MsgLog cache using its ID.
 func (l *MsgLog) GetSignLog(id string) *SignMessage {
 	l.lock.Lock()
 	defer l.lock.Unlock()
@@ -91,6 +97,7 @@ func (l *MsgLog) GetSignLog(id string) *SignMessage {
 	return l.signs[id]
 }
 
+// GetViewChangeLog retrieves a ViewChangeMessage from the MsgLog cache using its ID.
 func (l *MsgLog) GetViewChangeLog(id string) *ViewChangeMessage {
 	l.lock.Lock()
 	defer l.lock.Unlock()
@@ -98,6 +105,7 @@ func (l *MsgLog) GetViewChangeLog(id string) *ViewChangeMessage {
 	return l.views[id]
 }
 
+// Count returns the count of messages of a specific type in the MsgLog cache.
 func (l *MsgLog) Count(msgType PBFTMsgType) uint64 {
 	l.lock.Lock()
 	defer l.lock.Unlock()
