@@ -12,8 +12,10 @@ import (
 	"time"
 )
 
+const SyncPollingTime = 5
+
 type BlockPool struct {
-	lock           sync.Mutex
+	full           int
 	pool           map[string]*blockchain.Block
 	chain          *blockchain.Chain
 	network        *p2pnet.P2PNet
@@ -22,10 +24,11 @@ type BlockPool struct {
 	newBlock       chan *BlockMessage
 	syncMsg        chan *BlockMessage
 	log            *log.Logger
+	lock           sync.Mutex
 }
 
 // NewBlockPool create a new block pool
-func NewBlockPool(net *p2pnet.P2PNet, chain *blockchain.Chain, logPath string) *BlockPool {
+func NewBlockPool(f int, net *p2pnet.P2PNet, chain *blockchain.Chain, logPath string) *BlockPool {
 	// initialize logger
 	l := utils.NewLogger("[BlockPool] ", logPath)
 
@@ -34,6 +37,7 @@ func NewBlockPool(net *p2pnet.P2PNet, chain *blockchain.Chain, logPath string) *
 	}
 
 	pool := &BlockPool{
+		full:           f,
 		pool:           make(map[string]*blockchain.Block),
 		network:        net,
 		chain:          chain,
@@ -53,32 +57,6 @@ func (bp *BlockPool) Run() {
 	// run block sync
 	bp.log.Println("Begin Block synchronization")
 	go bp.BlockSyncRoutine()
-
-	// routine wait new block
-	//for {
-	//	select {
-	//	// receive new block
-	//	case newBlockMsg := <-bp.newBlock:
-	//		msg, _ := newBlockMsg.SplitMessage()
-	//		if newBlock, ok := msg.(NewBlockMessage); ok {
-	//			bp.log.Println("receive new block")
-	//			var block blockchain.Block
-	//			err := json.Unmarshal(newBlock.Block, &block)
-	//			if err != nil {
-	//				bp.log.Println("Deserialize Block fail")
-	//			}
-	//			bp.log.Printf("block height: %d, block hash: %s", block.Header.Height, block.Header.Hash)
-	//			if !(bp.chain.AddBlock(&block)) {
-	//				bp.log.Println("Add Block to chain fail, put it in the pool")
-	//				bp.AddBlock(&block)
-	//			} else {
-	//				bp.log.Println("Add Block to chain successfully")
-	//				bp.log.Println("Reindex pool")
-	//				bp.Reindex()
-	//			}
-	//		}
-	//	}
-	//}
 }
 
 // OnReceive handle message receive from peer
@@ -130,7 +108,7 @@ func (bp *BlockPool) BlockSynchronization() {
 
 func (bp *BlockPool) BlockSyncRoutine() {
 	bp.BlockSynchronization()
-	syncTimer := time.NewTimer(5 * time.Second)
+	syncTimer := time.NewTimer(SyncPollingTime * time.Second)
 
 	// run synchronization routine
 	for {
@@ -252,6 +230,11 @@ func (bp *BlockPool) AddBlock(block *blockchain.Block) {
 	if _, exists := bp.pool[id]; !exists {
 		// add block to pool
 		bp.pool[id] = block
+		// check pool status
+		if len(bp.pool) >= bp.full {
+			// add block to chain
+			bp.Reindex()
+		}
 	}
 }
 

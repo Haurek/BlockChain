@@ -8,6 +8,7 @@ import (
 	"crypto/elliptic"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // Wallet type
@@ -91,6 +92,18 @@ func LoadWallet(publicKeyPath, privateKeyPath string) (*Wallet, error) {
 
 // SaveWallet save key pair in file
 func (wallet *Wallet) SaveWallet(publicKeyPath, privateKeyPath string) error {
+	// create dir
+	publicKeyDir := filepath.Dir(publicKeyPath)
+	privateKeyDir := filepath.Dir(privateKeyPath)
+
+	if err := os.MkdirAll(publicKeyDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+
+	if err := os.MkdirAll(privateKeyDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+
 	if err := mycrypto.SavePublicKey(wallet.publicKey, publicKeyPath); err != nil {
 		panic("fail to save public key")
 		return err

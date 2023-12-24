@@ -11,14 +11,16 @@ import (
 )
 
 type TxPool struct {
-	mu      sync.Mutex
-	pool    map[string]*blockchain.Transaction
-	network *p2pnet.P2PNet
-	log     *log.Logger
+	full       int
+	pool       map[string]*blockchain.Transaction
+	network    *p2pnet.P2PNet
+	FullSignal chan *struct{}
+	log        *log.Logger
+	lock       sync.Mutex
 }
 
 // NewTxPool create a new transaction pool
-func NewTxPool(net *p2pnet.P2PNet, logPath string) *TxPool {
+func NewTxPool(f int, net *p2pnet.P2PNet, logPath string) *TxPool {
 	// initialize logger
 	l := utils.NewLogger("[TxPool] ", logPath)
 
@@ -27,9 +29,11 @@ func NewTxPool(net *p2pnet.P2PNet, logPath string) *TxPool {
 	}
 
 	pool := &TxPool{
-		pool:    make(map[string]*blockchain.Transaction),
-		network: net,
-		log:     l,
+		full:       f,
+		pool:       make(map[string]*blockchain.Transaction),
+		network:    net,
+		log:        l,
+		FullSignal: make(chan *struct{}),
 	}
 	return pool
 }
@@ -42,20 +46,23 @@ func (tp *TxPool) Run() {
 
 // AddTransaction add transaction to pool
 func (tp *TxPool) AddTransaction(tx *blockchain.Transaction) {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
-
 	id := hex.EncodeToString(tx.ID[:])
+	tp.lock.Lock()
 	if _, exists := tp.pool[id]; !exists {
 		tp.log.Println("Add Transaction to pool: ", id)
 		tp.pool[id] = tx
 	}
+	if len(tp.pool) >= tp.full {
+		// TxPool full, interrupt consensus layer
+		tp.FullSignal <- &struct{}{}
+	}
+	tp.lock.Unlock()
 }
 
 // GetTransactions get all transactions from pool
 func (tp *TxPool) GetTransactions() map[string]*blockchain.Transaction {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
+	tp.lock.Lock()
+	defer tp.lock.Unlock()
 
 	transactions := make(map[string]*blockchain.Transaction)
 	for id, tx := range tp.pool {
@@ -67,8 +74,8 @@ func (tp *TxPool) GetTransactions() map[string]*blockchain.Transaction {
 
 // RemoveTransaction remove transaction from pool by ID
 func (tp *TxPool) RemoveTransaction(id string) {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
+	tp.lock.Lock()
+	defer tp.lock.Unlock()
 
 	if _, exists := tp.pool[id]; exists {
 		delete(tp.pool, id)
@@ -77,8 +84,8 @@ func (tp *TxPool) RemoveTransaction(id string) {
 }
 
 func (tp *TxPool) HaveTransaction(id string) bool {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
+	tp.lock.Lock()
+	defer tp.lock.Unlock()
 
 	_, exists := tp.pool[id]
 	return exists
@@ -86,8 +93,8 @@ func (tp *TxPool) HaveTransaction(id string) bool {
 
 // Count transaction num in pool
 func (tp *TxPool) Count() int {
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
+	tp.lock.Lock()
+	defer tp.lock.Unlock()
 
 	return len(tp.pool)
 }

@@ -2,8 +2,10 @@ package client
 
 import (
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"os"
+	"strings"
 )
 
 // Configurations for different aspects of the blockchain client.
@@ -25,27 +27,29 @@ type ChainCfg struct {
 }
 
 type P2PNetCfg struct {
-	BootstrapPeers []string `json:"bootstrapPeers"`
-	PriKeyPath     string   `json:"priKeyPath"`
-	Bootstrap      bool     `json:"bootstrap"`
-	ListenAddr     string   `json:"listenAddr"`
-	LogPath        string   `json:"logPath"`
+	PriKeyPath string `json:"priKeyPath"`
+	Bootstrap  bool   `json:"bootstrap"`
+	ListenAddr string `json:"listenAddr"`
+	LogPath    string `json:"logPath"`
 }
 
 type PBFTCfg struct {
-	View         uint64 `json:"view"`
-	Index        uint64 `json:"index"`
-	NodeNum      uint64 `json:"nodeNum"`
-	MaxFaultNode uint64 `json:"maxFaultNode"`
-	LogPath      string `json:"logPath"`
+	IsConsensusNode bool   `json:"is_consensus_node"`
+	View            uint64 `json:"view"`
+	Index           uint64 `json:"index"`
+	NodeNum         uint64 `json:"nodeNum"`
+	MaxFaultNode    uint64 `json:"maxFaultNode"`
+	LogPath         string `json:"logPath"`
 }
 
 type TxPoolCfg struct {
-	LogPath string `json:"logPath"`
+	TxPoolFull int    `json:"txPoolFull"`
+	LogPath    string `json:"logPath"`
 }
 
 type BlockPoolCfg struct {
-	LogPath string `json:"logPath"`
+	BlockPoolFull int    `json:"blockPoolFull"`
+	LogPath       string `json:"logPath"`
 }
 
 type Config struct {
@@ -63,7 +67,18 @@ type Config struct {
 func LoadConfig(file string) (*Config, error) {
 	// Check if the file exists
 	if _, err := os.Stat(file); os.IsNotExist(err) {
-		return nil, err
+		def := DefaultConfig()
+		cfgValue, err := json.Marshal(def)
+		if err != nil {
+			return def, err
+		}
+		fd, err := os.Create(file)
+		if err != nil {
+			return def, err
+		}
+		defer fd.Close()
+		_, err = io.Copy(fd, strings.NewReader(string(cfgValue)))
+		return def, err
 	}
 
 	// Open the file for reading
@@ -87,4 +102,43 @@ func LoadConfig(file string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func DefaultConfig() *Config {
+	return &Config{
+		WalletCfg: WalletCfg{
+			PubKeyPath: "./wallet/public_key.pem",
+			PriKeyPath: "./wallet/private_key.pem",
+		},
+		ChainCfg: ChainCfg{
+			ChainDataBasePath: "./database",
+			MaxTxPerBlock:     9,
+			LogPath:           "./log/chain.log",
+		},
+		P2PNetCfg: P2PNetCfg{
+			PriKeyPath: "./wallet/private_key.pem",
+			Bootstrap:  false,
+			ListenAddr: "/ip4/0.0.0.0/tcp/6666",
+			LogPath:    "./log/net.log",
+		},
+		PBFTCfg: PBFTCfg{
+			IsConsensusNode: false,
+			View:            0,
+			Index:           0,
+			NodeNum:         0,
+			MaxFaultNode:    0,
+			LogPath:         "./log/pbft.log",
+		},
+		ClientCfg: ClientCfg{
+			LogPath: "./log/client.log",
+		},
+		TxPoolCfg: TxPoolCfg{
+			TxPoolFull: 0,
+			LogPath:    "./log/txpool.log",
+		},
+		BlockPoolCfg: BlockPoolCfg{
+			BlockPoolFull: 0,
+			LogPath:       "./log/blockpool.log",
+		},
+	}
 }

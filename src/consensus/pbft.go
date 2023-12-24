@@ -15,47 +15,36 @@ import (
 )
 
 const (
-	TxPoolPollingTime  = 10
-	PrimaryNodeTimeout = 20
-	TxPoolFull         = 1
+	ViewTimeout = 20
 )
 
 // PBFT type
-// @param fsm: finite-state machine
-// @param msgLog: Message msgLog
-// @param msgQueue: Message queue
-// @param pBFTPeers: peerID -> public key, public key used for verify
-// @param privateKey: used for message sign
-// @param isStart: pBFT consensus start flag
-// @param isPrimary: primary node flag
-// @param view: current view
 type PBFT struct {
-	id     string
-	engine *PBFTEngine
-	msgLog *MsgLog
+	id     string      // pBFT node ID
+	engine *PBFTEngine // consensus engine
+	msgLog *MsgLog     // cache of consensus messages
 
-	net        *p2pnet.P2PNet
-	privateKey *ecdsa.PrivateKey
-	publicKey  *ecdsa.PublicKey
-	chain      *blockchain.Chain
-	blockPool  *pool.BlockPool
-	txPool     *pool.TxPool
+	net        *p2pnet.P2PNet    // network layer
+	privateKey *ecdsa.PrivateKey // private key
+	publicKey  *ecdsa.PublicKey  // public key
+	chain      *blockchain.Chain // block chain
+	blockPool  *pool.BlockPool   // block pool
+	txPool     *pool.TxPool      // tx pool
 
-	isStart   bool
-	isPrimary bool
-	isRunning bool
+	isStart   bool // flag of start
+	isPrimary bool // flag of primary node
+	isRunning bool // flag of running
 
-	view         uint64
-	index        uint64
-	leaderIndex  uint64
-	nodeNum      uint64
-	maxFaultNode uint64
+	view         uint64 // current view
+	index        uint64 // node index
+	leaderIndex  uint64 // primary node index
+	nodeNum      uint64 // total consensus node number
+	maxFaultNode uint64 // max pBFT fault node number
 
-	sealerTimer  *time.Timer
-	primaryTimer *time.Timer
-	consensusMsg chan *PBFTMessage
-	lock         sync.Mutex
-	log          *log.Logger
+	viewChangeTimer *time.Timer       // view change timer
+	consensusMsg    chan *PBFTMessage // consensus message channel
+	lock            sync.Mutex
+	log             *log.Logger
 }
 
 // NewPBFT create pBFT engine
@@ -81,17 +70,15 @@ func NewPBFT(num, index uint64, f uint64, v uint64, tp *pool.TxPool, bp *pool.Bl
 		log:          l,
 		consensusMsg: make(chan *PBFTMessage),
 	}
-
 	pbft.id = string(wallet.GetAddress())
+	// set primary node
 	pbft.leaderIndex = (v + chain.BestHeight) % pbft.nodeNum
 	if pbft.leaderIndex == pbft.index {
 		pbft.isPrimary = true
 	}
-	pbft.sealerTimer = time.NewTimer(TxPoolPollingTime * time.Second)
-	pbft.primaryTimer = time.NewTimer(PrimaryNodeTimeout * time.Second)
-	pbft.sealerTimer.Stop()
-	pbft.primaryTimer.Stop()
-
+	// initialize timer
+	pbft.viewChangeTimer = time.NewTimer(ViewTimeout * time.Second)
+	pbft.viewChangeTimer.Stop()
 	return pbft, nil
 }
 
@@ -117,82 +104,103 @@ func (pbft *PBFT) Run() {
 	// register callback func
 	pbft.net.RegisterCallback(p2pnet.ConsensusMsg, pbft.OnReceive)
 
-	if pbft.isPrimary {
-		pbft.sealerTimer.Reset(TxPoolPollingTime * time.Second)
-	} else {
-		pbft.primaryTimer.Reset(PrimaryNodeTimeout * time.Second)
-	}
-
 	// run PBFTEngine
 	for {
 		select {
 		// receive message
 		case msg := <-pbft.consensusMsg:
-			pbft.log.Println("Receive a PBFT message")
+			pbft.log.Println("Receive a consensus message")
 			if !pbft.isStart {
 				continue
 			}
 			// run FSM handle message
 			pbft.NextState(msg)
-		case <-pbft.primaryTimer.C:
-			// primary node timeout
-			if pbft.isPrimary || !pbft.isStart {
-				pbft.primaryTimer.Reset(PrimaryNodeTimeout * time.Second)
+		case <-pbft.viewChangeTimer.C:
+			// primary node timeout or running timeout
+			// raise view change
+			pbft.log.Println("View change timeout, run view change")
+
+			pbft.lock.TryLock()
+			pbft.viewChangeTimer.Stop()
+			pbft.isRunning = true
+			pbft.SetState(ViewChangeState)
+			pbft.lock.Unlock()
+
+			// sign
+			signature, err := mycrypto.Sign(pbft.privateKey, pbft.chain.Tip)
+			if err != nil {
+				pbft.log.Println("Sign view change message fail")
 				continue
-			} else {
-				// raise view change
 			}
-		case <-pbft.sealerTimer.C:
+			msg := ViewChangeMessage{
+				ID:        pbft.id,
+				Height:    pbft.chain.BestHeight,
+				BlockHash: pbft.chain.Tip,
+				View:      pbft.view,
+				ToView:    (pbft.view + 1) % pbft.nodeNum,
+				Sign:      signature,
+				PubKey:    mycrypto.PublicKey2Bytes(pbft.publicKey),
+			}
+			p2pmsg, err := pbft.packBroadcastMessage(ViewChangeMsg, msg)
+			if err != nil {
+				pbft.log.Println(err)
+			}
+			// broadcast
+			pbft.net.Broadcast(p2pmsg)
+			var pbftMsg PBFTMessage
+			json.Unmarshal(p2pmsg.Data, &pbftMsg)
+			// run consensus engine
+			pbft.NextState(&pbftMsg)
+
+		case <-pbft.txPool.FullSignal:
+			// receive TxPool interrupt
+			pbft.log.Println("TxPool full, pack into block...")
 			pbft.lock.Lock()
-			if !pbft.isPrimary {
-				// not primary node, stop timer
+			if !pbft.isStart || pbft.isRunning {
+				// is running or not start, ignore
 				pbft.lock.Unlock()
-				pbft.sealerTimer.Stop()
 				continue
 			}
-			if !pbft.isStart || pbft.isRunning {
-				// is running or not start, reset
+			if !pbft.isPrimary {
+				// not primary node
+				// start viewChange timer, wait primary node prepare message
 				pbft.lock.Unlock()
-				pbft.sealerTimer.Reset(10 * time.Second)
+				pbft.viewChangeTimer.Reset(ViewTimeout * time.Second)
 				continue
 			}
 			pbft.lock.Unlock()
 
-			// check TxPool
-			if pbft.txPool.Count() >= TxPoolFull {
-				// pack block into prepare message
-				msg, err := pbft.PBFTSealer()
-				if err != nil {
-					pbft.log.Println(err)
-					pbft.sealerTimer.Reset(10 * time.Second)
-					continue
-				}
-				// serialize PBFTMessage
-				serialized, err := json.Marshal(msg)
-				if err != nil {
-					pbft.log.Println(err)
-					pbft.sealerTimer.Reset(10 * time.Second)
-					continue
-				}
-				// pack P2P network message
-				p2pMessage := &p2pnet.Message{
-					Type: p2pnet.ConsensusMsg,
-					Data: serialized,
-				}
-				pbft.net.Broadcast(p2pMessage)
-				time.Sleep(10 * time.Millisecond)
-
-				// run PBFTEngine
-				pbft.NextState(msg)
-			} else {
-				pbft.sealerTimer.Reset(10 * time.Second)
+			// primary node pack Txs into block and send prepare message
+			msg, err := pbft.PBFTSealer()
+			if err != nil {
+				pbft.log.Println(err)
+				continue
 			}
+			// serialize PBFTMessage
+			serialized, err := json.Marshal(msg)
+			if err != nil {
+				pbft.log.Println(err)
+				continue
+			}
+			// pack P2P network message
+			p2pMessage := &p2pnet.Message{
+				Type: p2pnet.ConsensusMsg,
+				Data: serialized,
+			}
+			// broadcast
+			pbft.log.Println("Broadcast prepare message")
+			pbft.net.Broadcast(p2pMessage)
+			time.Sleep(10 * time.Millisecond)
+
+			// send prepare message to self engine
+			pbft.NextState(msg)
 		}
 	}
 }
 
 // PBFTSealer primary node pack block
 func (pbft *PBFT) PBFTSealer() (*PBFTMessage, error) {
+	pbft.log.Println("Primary node pack block...")
 	// get txs from pool
 	txMap := pbft.txPool.GetTransactions()
 	var txs []*blockchain.Transaction

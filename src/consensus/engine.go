@@ -22,16 +22,15 @@ const (
 )
 
 // PBFTEngine pBFT consensus engine
-// handle state of pBFT consensus
 type PBFTEngine struct {
-	currentState State
+	currentState State // current state of pBFT node
 	lock         sync.Mutex
 }
 
 // NewEngine create a new engine
 func NewEngine() *PBFTEngine {
 	return &PBFTEngine{
-		currentState: PrePrepareState,
+		currentState: PrePrepareState, // initialize state
 	}
 }
 
@@ -40,28 +39,26 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 	data, _ := msg.SplitMessage()
 	switch pbft.engine.currentState {
 	case PrePrepareState:
-		// replica node in this state wait primary node pre-prepare message
+		// node in this state wait primary node prepare message
 		if prepare, ok := data.(PrepareMessage); ok {
-			// receive pre-prepare message from primary node
-			// start consensus
+			// receive prepare message from primary node
+			// set status and start consensus
 			pbft.lock.Lock()
 			pbft.isRunning = true
-			pbft.primaryTimer.Stop()
+			// receive primary prepare message, start timer
+			pbft.viewChangeTimer.Reset(ViewTimeout * time.Second)
 			pbft.lock.Unlock()
 
 			next, err := pbft.handlePrepare(&prepare)
 			if next {
-				// change state to prepare state
+				// change state to prepare state, wait sign message
 				pbft.SetState(PrepareState)
 			} else if err != nil {
 				pbft.log.Println(err)
-				pbft.lock.Lock()
-				pbft.isRunning = false
-				if !pbft.isPrimary {
-					pbft.primaryTimer.Reset(PrimaryNodeTimeout * time.Second)
-				}
-				pbft.lock.Unlock()
 			}
+		} else if viewChange, ok := data.(ViewChangeMessage); ok {
+			// receive view change message
+			pbft.handleViewChange(&viewChange)
 		}
 	case PrepareState:
 		if sign, ok := data.(SignMessage); ok {
@@ -72,33 +69,70 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 			} else if err != nil {
 				pbft.log.Println(err)
 			}
+		} else if viewChange, ok := data.(ViewChangeMessage); ok {
+			// receive view change message
+			pbft.handleViewChange(&viewChange)
 		}
 	case CommitState:
 		if commit, ok := data.(CommitMessage); ok {
 			next, err := pbft.handleCommit(&commit)
 			if next {
-				// reset State
+				pbft.log.Println("Finish consensus")
+				// finish consensus, reset State
 				pbft.ResetState()
 				// update status
 				pbft.lock.Lock()
-				// primary node change
+				// change primary node
 				pbft.leaderIndex = (pbft.view + pbft.chain.BestHeight) % pbft.nodeNum
 				if pbft.leaderIndex == pbft.index {
 					pbft.isPrimary = true
-					pbft.primaryTimer.Stop()
-					pbft.sealerTimer.Reset(TxPoolPollingTime * time.Second)
 				} else {
 					pbft.isPrimary = false
-					pbft.primaryTimer.Reset(PrimaryNodeTimeout * time.Second)
 				}
+				// stop running
+				pbft.viewChangeTimer.Stop()
 				pbft.isRunning = false
+				// clear log cache
+				if pbft.chain.BestHeight%pbft.nodeNum == 0 {
+					pbft.msgLog.ClearLog()
+				}
 				pbft.lock.Unlock()
 			} else if err != nil {
 				pbft.log.Println(err)
 			}
+		} else if viewChange, ok := data.(ViewChangeMessage); ok {
+			// receive view change message
+			pbft.handleViewChange(&viewChange)
 		}
 	case ViewChangeState:
+		if viewChange, ok := data.(ViewChangeMessage); ok {
+			// receive view change message
+			next, err := pbft.handleViewChange(&viewChange)
+			if next {
+				// reset state
+				pbft.ResetState()
+				// update status
+				pbft.lock.Lock()
+				// change primary node
+				pbft.leaderIndex = (pbft.view + pbft.chain.BestHeight) % pbft.nodeNum
+				if pbft.leaderIndex == pbft.index {
+					pbft.isPrimary = true
+				} else {
+					pbft.isPrimary = false
+				}
+				// stop running
+				pbft.viewChangeTimer.Stop()
+				pbft.isRunning = false
+				// clear log cache
+				pbft.msgLog.ClearLog()
+				pbft.lock.Unlock()
+			} else if err != nil {
+				pbft.log.Println(err)
+			}
+
+		}
 	default:
+		pbft.log.Println("Unknown message")
 	}
 }
 
@@ -124,8 +158,9 @@ func (pbft *PBFT) handlePrepare(prepare *PrepareMessage) (bool, error) {
 			return false, errors.New("block previous hash not match")
 		}
 		if len(block.Transactions) == 0 {
-			// empty Tx, run view change
-			// TODO
+			// empty Tx, raise view change
+			pbft.viewChangeTimer.Stop()
+			pbft.SetState(ViewChangeState)
 		}
 		// verify transaction
 		for _, tx := range block.Transactions {
@@ -136,9 +171,10 @@ func (pbft *PBFT) handlePrepare(prepare *PrepareMessage) (bool, error) {
 			// update tx pool
 			pbft.txPool.RemoveTransaction(hex.EncodeToString(tx.ID))
 		}
+		pbft.log.Println("Verify block successfully")
 
-		// cache block
-		pbft.blockPool.AddBlock(&block)
+		// add block to log cache
+		pbft.msgLog.CacheBlock(&block)
 
 		// add message to cache
 		pbft.msgLog.AddMessage(PrepareMsg, *prepare)
@@ -168,6 +204,7 @@ func (pbft *PBFT) handlePrepare(prepare *PrepareMessage) (bool, error) {
 		pbft.msgLog.AddMessage(SignMsg, msg)
 
 		// broadcast prepare message
+		pbft.log.Println("Broadcast sign message")
 		pbft.net.Broadcast(p2pMessage)
 	}
 	return true, nil
@@ -187,15 +224,15 @@ func (pbft *PBFT) handleSign(sign *SignMessage) (bool, error) {
 	} else if pbft.msgLog.HaveLog(SignMsg, sign.ID) {
 		// check already receive message from the peer
 		return false, errors.New("already receive this prepare message")
-	} else if !pbft.blockPool.HaveBlock(sign.BlockHash) {
+	} else if !pbft.msgLog.HaveBlock(sign.BlockHash) {
 		// check cache block hash
 		return false, errors.New("unsigned block")
 	} else {
 		// add message to cache
 		pbft.msgLog.AddMessage(SignMsg, *sign)
-		pbft.log.Println("sign count: ", pbft.msgLog.Count(SignMsg))
+		pbft.log.Println("Verify sign message successfully, sign count: ", pbft.msgLog.Count(SignMsg))
 		if pbft.msgLog.Count(SignMsg) == 2*pbft.maxFaultNode+1 {
-			pbft.log.Println("Already receive enough sign message, broadcast commit message")
+			pbft.log.Println("Already receive enough sign message")
 			// had received enough prepare message
 
 			// get self Sign message
@@ -220,6 +257,7 @@ func (pbft *PBFT) handleSign(sign *SignMessage) (bool, error) {
 			pbft.msgLog.AddMessage(CommitMsg, msg)
 
 			// broadcast prepare message
+			pbft.log.Println("Broadcast commit message")
 			pbft.net.Broadcast(p2pMessage)
 
 			return true, nil
@@ -239,48 +277,89 @@ func (pbft *PBFT) handleCommit(commit *CommitMessage) (bool, error) {
 		return false, errors.New("verify digest fail")
 	} else if pbft.msgLog.HaveLog(CommitMsg, commit.ID) {
 		return false, errors.New("already receive this commit message")
-	} else if !pbft.blockPool.HaveBlock(commit.BlockHash) {
+	} else if !pbft.msgLog.HaveBlock(commit.BlockHash) {
 		// check cache block hash
 		return false, errors.New("unsigned block")
 	} else {
 		// add message to cache
 		pbft.msgLog.AddMessage(CommitMsg, *commit)
-		pbft.log.Println("commit count: ", pbft.msgLog.Count(CommitMsg))
+		pbft.log.Println("Verify commit message successfully, commit count: ", pbft.msgLog.Count(CommitMsg))
 
 		// check already receive commit message
 		if pbft.msgLog.Count(CommitMsg) == 2*pbft.maxFaultNode+1 {
 			// had received enough commit message
 			pbft.log.Println("Already receive enough commit message")
-			// add block to chain
-			pbft.blockPool.Reindex()
+			// add block to block pool
+			pbft.log.Println("Add block to chain")
+			block := pbft.msgLog.GetBlock(commit.BlockHash)
+			pbft.blockPool.AddBlock(block)
+
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-// SetState sets the state of the PBFT consensus engine to the provided state.
+func (pbft *PBFT) handleViewChange(viewChange *ViewChangeMessage) (bool, error) {
+	pbft.log.Println("Receive a view change message from: ", viewChange.ID)
+	// receive commit message
+	// verify
+	pubKey := mycrypto.Bytes2PublicKey(viewChange.PubKey)
+	if pbft.chain.BestHeight > viewChange.Height {
+		return false, errors.New("expired request")
+	} else if (pbft.view+1)%pbft.nodeNum != viewChange.ToView {
+		return false, errors.New("invalid view change")
+	} else if !mycrypto.Verify(pubKey, viewChange.BlockHash, viewChange.Sign) {
+		return false, errors.New("verify digest fail")
+	} else if pbft.msgLog.HaveLog(ViewChangeMsg, viewChange.ID) {
+		return false, errors.New("already receive this view change message")
+	} else {
+		// add message to cache
+		pbft.msgLog.AddMessage(ViewChangeMsg, *viewChange)
+		pbft.log.Println("Verify viewChange message successfully")
+		pbft.log.Printf("to view: %d, count: %d", viewChange.ToView, pbft.msgLog.ViewChangeCount(viewChange.ToView))
+
+		// not in view change state, pass
+		if pbft.GetState() != ViewChangeState {
+			return false, nil
+		}
+
+		// check already receive view change message
+		if pbft.msgLog.ViewChangeCount(viewChange.ToView) == 2*pbft.maxFaultNode+1 {
+			// had received enough view change message
+			pbft.log.Println("Already receive enough view change message")
+			// change view
+			pbft.lock.Lock()
+			pbft.view = viewChange.ToView
+			pbft.lock.Unlock()
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// SetState sets the state of the PBFT consensus engine
 func (pbft *PBFT) SetState(s State) {
-	pbft.engine.lock.Lock()         // Lock to ensure thread safety during state modification
-	defer pbft.engine.lock.Unlock() // Release the lock after function execution
-	pbft.engine.currentState = s    // Update the current state to the provided state
+	pbft.engine.lock.Lock()
+	defer pbft.engine.lock.Unlock()
+	pbft.engine.currentState = s
 }
 
 // GetState retrieves the current state of the PBFT consensus engine.
 func (pbft *PBFT) GetState() State {
-	pbft.engine.lock.Lock()         // Lock to ensure thread safety during state retrieval
-	defer pbft.engine.lock.Unlock() // Release the lock after function execution
-	return pbft.engine.currentState // Return the current state
+	pbft.engine.lock.Lock()
+	defer pbft.engine.lock.Unlock()
+	return pbft.engine.currentState
 }
 
 // ResetState resets the state of the PBFT consensus engine to the PrePrepareState.
 func (pbft *PBFT) ResetState() {
-	pbft.engine.lock.Lock()                    // Lock to ensure thread safety during state reset
-	defer pbft.engine.lock.Unlock()            // Release the lock after function execution
-	pbft.engine.currentState = PrePrepareState // Set the current state to PrePrepareState
+	pbft.engine.lock.Lock()
+	defer pbft.engine.lock.Unlock()
+	pbft.engine.currentState = PrePrepareState
 }
 
-// packBroadcastMessage prepares a P2P network message by packaging a PBFT message with its corresponding type.
+// packBroadcastMessage pack a P2P network message by packaging a PBFT message with its corresponding type.
 func (pbft *PBFT) packBroadcastMessage(t PBFTMsgType, msg interface{}) (*p2pnet.Message, error) {
 	var payload []byte
 	var err error

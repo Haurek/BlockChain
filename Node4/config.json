@@ -9,13 +9,13 @@
     "logPath": "./log/chain.log"
   },
   "p2PNetCfg": {
-    "bootstrapPeers": [],
     "priKeyPath": "./wallet/private_key.pem",
     "bootstrap": false,
-    "listenAddr": "/ip4/127.0.0.1/tcp/6669",
+    "listenAddr": "/ip4/127.0.0.1/tcp/6665",
     "logPath": "./log/net.log"
   },
   "PBFTCfg": {
+    "is_consensus_node": true,
     "view": 0,
     "index": 3,
     "nodeNum": 4,
@@ -26,9 +26,11 @@
     "logPath": "./log/client.log"
   },
   "txPoolCfg": {
+    "txPoolFull": 2,
     "logPath": "./log/txpool.log"
   },
   "blockPoolCfg": {
+    "blockPoolFull": 1,
     "logPath": "./log/blockpool.log"
   }
 }

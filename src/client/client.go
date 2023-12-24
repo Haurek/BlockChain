@@ -18,14 +18,15 @@ import (
 
 // Client represents a blockchain client
 type Client struct {
-	chain     *blockchain.Chain
-	network   *p2pnet.P2PNet
-	consensus *consensus.PBFT
-	wallet    *blockchain.Wallet
-	txPool    *pool.TxPool
-	blockPool *pool.BlockPool
-	config    *Config
-	log       *log.Logger
+	isConsensus bool
+	chain       *blockchain.Chain
+	network     *p2pnet.P2PNet
+	consensus   *consensus.PBFT
+	wallet      *blockchain.Wallet
+	txPool      *pool.TxPool
+	blockPool   *pool.BlockPool
+	config      *Config
+	log         *log.Logger
 }
 
 // CreateClient creates a new client
@@ -37,10 +38,10 @@ func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*C
 	net := p2pnet.CreateNode(config.P2PNetCfg.PriKeyPath, config.P2PNetCfg.ListenAddr, config.P2PNetCfg.LogPath)
 
 	// initialize TxPool
-	txPool := pool.NewTxPool(net, config.TxPoolCfg.LogPath)
+	txPool := pool.NewTxPool(config.TxPoolFull, net, config.TxPoolCfg.LogPath)
 
 	// initialize BlockPool
-	blockPool := pool.NewBlockPool(net, c, config.BlockPoolCfg.LogPath)
+	blockPool := pool.NewBlockPool(config.BlockPoolFull, net, c, config.BlockPoolCfg.LogPath)
 
 	// initialize the consensus
 	pbft, err := consensus.NewPBFT(config.PBFTCfg.NodeNum, config.PBFTCfg.Index, config.PBFTCfg.MaxFaultNode, config.PBFTCfg.View, txPool, blockPool, net, c, w, config.PBFTCfg.LogPath)
@@ -49,14 +50,15 @@ func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*C
 		return nil, err
 	}
 	client := &Client{
-		chain:     c,
-		network:   net,
-		consensus: pbft,
-		wallet:    w,
-		txPool:    txPool,
-		blockPool: blockPool,
-		config:    config,
-		log:       l,
+		isConsensus: config.PBFTCfg.IsConsensusNode,
+		chain:       c,
+		network:     net,
+		consensus:   pbft,
+		wallet:      w,
+		txPool:      txPool,
+		blockPool:   blockPool,
+		config:      config,
+		log:         l,
 	}
 	return client, nil
 }
@@ -68,8 +70,10 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 	go c.network.StartNode()
 
 	// Run pBFT consensus
-	c.log.Println("Run pBFT consensus")
-	go c.consensus.Run()
+	if c.isConsensus {
+		c.log.Println("Run pBFT consensus")
+		go c.consensus.Run()
+	}
 
 	// Run transaction pool
 	c.log.Println("Run Transaction Pool")
