@@ -2,21 +2,20 @@ package main
 
 import "fmt"
 
-func main() {
-	data := map[string][]int{
-		"key1": {1},
-		"key2": {10, 20, 30, 40, 50},
-	}
+type test struct {
+	s string
+}
 
-	for key, value := range data {
-		var newDate []int
-		for _, item := range value {
-			if item == 1 {
-				continue
-			}
-			newDate = append(newDate, item)
-		}
-		data[key] = newDate
+func main() {
+	views := make([]map[string]*test, 4)
+	for i, _ := range views {
+		views[i] = make(map[string]*test)
 	}
-	fmt.Println(data)
+	to := 1
+	id := "id"
+	t := &test{
+		s: "123",
+	}
+	views[to][id] = t
+	fmt.Printf("%v", views[to][id])
 }

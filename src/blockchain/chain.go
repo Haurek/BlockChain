@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log"
+	"strconv"
 	"sync"
 )
 
@@ -159,8 +160,6 @@ func LoadChain(path, logPath string) (*Chain, error) {
 	return chain, nil
 }
 
-// ... (previous functions continued)
-
 // AddGenesisBlock adds the genesis block to the chain and updates the UTXO set
 func (chain *Chain) AddGenesisBlock(genesisBlock *Block) {
 	// Add the genesis block to the chain in the database
@@ -265,15 +264,32 @@ func (chain *Chain) AddBlock(block *Block) bool {
 // HaveBlock checks if a block with a given hash exists in the chain
 func (chain *Chain) HaveBlock(hash []byte) bool {
 	// Check if the block exists in the chain
-	if chain.FindBlock(hash) != nil {
+	if chain.findBlockByHash(hash) != nil {
 		return true
 	}
 	return false
 }
 
-// FindBlock returns a block by its hash
-func (chain *Chain) FindBlock(hash []byte) *Block {
-	// Find and return the block from the chain using its hash
+func (chain *Chain) FindBlock(id string) *Block {
+	if len(id) < 16 {
+		// search block by height
+		height, err := strconv.Atoi(id)
+		if err != nil {
+			return nil
+		}
+		return chain.findBlockByHeight(uint64(height))
+	} else {
+		// search by hash
+		bytesID, err := hex.DecodeString(id)
+		if err != nil {
+			return nil
+		}
+		return chain.findBlockByHash(bytesID)
+	}
+}
+
+// FindBlockByHash returns a block by its hash
+func (chain *Chain) findBlockByHash(hash []byte) *Block {
 	chain.Lock.Lock()
 	serializeData, err := ReadFromDB(chain.DataBase, []byte(BlockTable), hash)
 	chain.Lock.Unlock()
@@ -283,9 +299,34 @@ func (chain *Chain) FindBlock(hash []byte) *Block {
 	var block Block
 	err = utils.Deserialize(serializeData, &block)
 	if err != nil {
+		chain.log.Println("Deserialize block fail")
 		return nil
 	}
 	return &block
+}
+
+// FindBlockByHeight returns a block by its height
+func (chain *Chain) findBlockByHeight(height uint64) *Block {
+	// Check if the block exists in the chain
+
+	iter := chain.Iterator()
+	for {
+		block := iter.Next()
+
+		if block.Header.Height == height {
+			return block
+		} else if block.Header.Height < height {
+			chain.log.Println("wrong height")
+			return nil
+		}
+
+		// Stop iterating if the current block is the genesis block
+		if block.IsGenesisBlock() {
+			break
+		}
+	}
+	chain.log.Println("block not found")
+	return nil
 }
 
 // FindTransaction returns a transaction by its ID

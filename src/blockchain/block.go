@@ -85,9 +85,34 @@ func (block *Block) IsGenesisBlock() bool {
 }
 
 // Show prints the details of the block to the console
-func (block *Block) Show() {
-	fmt.Println("Hash: ", hex.EncodeToString(block.Header.Hash))
-	fmt.Println("Height: ", block.Header.Height)
-	fmt.Println("PreHash: ", hex.EncodeToString(block.Header.PrevHash))
-	fmt.Println("Timestamp: ", block.Header.Timestamp)
+func (b *Block) Show() {
+	fmt.Println("--------------------------------------Block Information--------------------------------------")
+	fmt.Printf("Block Information:\n")
+	fmt.Printf("  Header:\n")
+	fmt.Printf("    Timestamp: %d\n", b.Header.Timestamp)
+	fmt.Printf("    Hash: %s\n", hex.EncodeToString(b.Header.Hash))
+	fmt.Printf("    PrevHash: %s\n", hex.EncodeToString(b.Header.PrevHash))
+	fmt.Printf("    Height: %d\n", b.Header.Height)
+	fmt.Println("-----------------------------------Transactions Information----------------------------------")
+	fmt.Printf("  TransactionCounter: %d\n", b.TransactionCounter)
+	fmt.Printf("  Transactions:\n")
+	fmt.Println("---------------------------------------------------------------------------------------------")
+	for i, tx := range b.Transactions {
+		fmt.Printf("    Transaction %d:\n", i+1)
+		fmt.Println("    Inputs:")
+		for i, input := range tx.Inputs {
+			fmt.Printf("      Inputs %d:\n", i)
+			fmt.Printf("        TxID: %s\n", hex.EncodeToString(input.TxID))
+			fmt.Printf("        Index: %d\n", input.Index)
+			fmt.Printf("        FromAddress: %s\n\n", string(input.FromAddress))
+		}
+		fmt.Println("    Outputs:")
+		for j, output := range tx.Outputs {
+			fmt.Printf("      Outputs: %d:\n", j)
+			fmt.Printf("        Value: %d\n", output.Value)
+			fmt.Printf("        ToAddress: %s\n\n", string(output.ToAddress))
+		}
+		fmt.Println("---------------------------------------------------------------------------------------------")
+
+	}
 }

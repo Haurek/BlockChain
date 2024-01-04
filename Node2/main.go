@@ -10,10 +10,6 @@ func main() {
 	// create client
 	//config, err := client.LoadConfig("./config.json")
 	config, err := client.LoadConfig("./Node2/debug.json")
-
-	if err != nil {
-		return
-	}
 	if err != nil {
 		return
 	}

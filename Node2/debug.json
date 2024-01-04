@@ -11,7 +11,7 @@
   "p2PNetCfg": {
     "priKeyPath": "./Node2/wallet/private_key.pem",
     "bootstrap": false,
-    "listenAddr": "/ip4/0.0.0.0/tcp/6667",
+    "listenAddr": "/ip4/127.0.0.1/tcp/6667",
     "logPath": "./Node2/log/net.log"
   },
   "PBFTCfg": {
@@ -26,7 +26,7 @@
     "logPath": "./Node2/log/client.log"
   },
   "txPoolCfg": {
-    "txPoolFull": 2,
+    "txPoolFull": 1,
     "logPath": "./Node2/log/txpool.log"
   },
   "blockPoolCfg": {

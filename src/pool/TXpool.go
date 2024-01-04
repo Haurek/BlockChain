@@ -11,10 +11,10 @@ import (
 )
 
 type TxPool struct {
-	full       int
-	pool       map[string]*blockchain.Transaction
-	network    *p2pnet.P2PNet
-	FullSignal chan *struct{}
+	full       int                                // signal primary when TxPool is full
+	pool       map[string]*blockchain.Transaction // Tx cache
+	network    *p2pnet.P2PNet                     // p2p network
+	FullSignal chan *struct{}                     // full chan
 	log        *log.Logger
 	lock       sync.Mutex
 }

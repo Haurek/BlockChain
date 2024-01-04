@@ -46,6 +46,7 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 			pbft.lock.Lock()
 			pbft.isRunning = true
 			// receive primary prepare message, start timer
+			pbft.log.Println("Start view change timer")
 			pbft.viewChangeTimer.Reset(ViewTimeout * time.Second)
 			pbft.lock.Unlock()
 
@@ -121,6 +122,7 @@ func (pbft *PBFT) NextState(msg *PBFTMessage) {
 					pbft.isPrimary = false
 				}
 				// stop running
+				pbft.log.Println("view change timeout, running view change")
 				pbft.viewChangeTimer.Stop()
 				pbft.isRunning = false
 				// clear log cache
@@ -146,7 +148,7 @@ func (pbft *PBFT) handlePrepare(prepare *PrepareMessage) (bool, error) {
 	} else if !mycrypto.Verify(pubKey, prepare.BlockHash, prepare.Sign) {
 		// verify signature fail
 		return false, errors.New("verify signature fail")
-	} else if pbft.msgLog.HaveLog(PrepareMsg, prepare.ID) {
+	} else if pbft.msgLog.HaveLog(PrepareMsg, prepare.ID, prepare.Height) {
 		return false, errors.New("already receive this prepare message")
 	} else {
 		var block blockchain.Block
@@ -163,15 +165,16 @@ func (pbft *PBFT) handlePrepare(prepare *PrepareMessage) (bool, error) {
 			pbft.SetState(ViewChangeState)
 		}
 		// verify transaction
+		success := blockchain.VerifyTransactions(pbft.chain, block.Transactions)
+		// update tx pool
 		for _, tx := range block.Transactions {
-			if !blockchain.VerifyTransaction(pbft.chain, tx) {
-				// transaction is invalid
-				return false, errors.New("tx verify error")
-			}
-			// update tx pool
 			pbft.txPool.RemoveTransaction(hex.EncodeToString(tx.ID))
 		}
-		pbft.log.Println("Verify block successfully")
+		if success {
+			pbft.log.Println("Verify block successfully")
+		} else {
+			return false, errors.New("tx verify error")
+		}
 
 		// add block to log cache
 		pbft.msgLog.CacheBlock(&block)
@@ -221,22 +224,22 @@ func (pbft *PBFT) handleSign(sign *SignMessage) (bool, error) {
 	} else if !mycrypto.Verify(pubKey, sign.BlockHash, sign.Sign) {
 		// verify signature fail
 		return false, errors.New("verify signature fail")
-	} else if pbft.msgLog.HaveLog(SignMsg, sign.ID) {
+	} else if pbft.msgLog.HaveLog(SignMsg, sign.ID, sign.Height) {
 		// check already receive message from the peer
-		return false, errors.New("already receive this prepare message")
-	} else if !pbft.msgLog.HaveBlock(sign.BlockHash) {
+		return false, errors.New("already receive this sign message")
+	} else if !pbft.msgLog.HaveBlock(sign.Height) {
 		// check cache block hash
 		return false, errors.New("unsigned block")
 	} else {
 		// add message to cache
 		pbft.msgLog.AddMessage(SignMsg, *sign)
-		pbft.log.Println("Verify sign message successfully, sign count: ", pbft.msgLog.Count(SignMsg))
-		if pbft.msgLog.Count(SignMsg) == 2*pbft.maxFaultNode+1 {
+		pbft.log.Println("Verify sign message successfully, sign count: ", pbft.msgLog.Count(SignMsg, sign.Height))
+		if pbft.msgLog.Count(SignMsg, sign.Height) == 2*pbft.maxFaultNode+1 {
 			pbft.log.Println("Already receive enough sign message")
 			// had received enough prepare message
 
 			// get self Sign message
-			selfSign := pbft.msgLog.GetSignLog(pbft.id)
+			selfSign := pbft.msgLog.GetSignLog(pbft.id, sign.Height)
 
 			// pack commit message
 			msg := CommitMessage{
@@ -275,23 +278,23 @@ func (pbft *PBFT) handleCommit(commit *CommitMessage) (bool, error) {
 		return false, errors.New("not in current view")
 	} else if !mycrypto.Verify(pubKey, commit.BlockHash, commit.Sign) {
 		return false, errors.New("verify digest fail")
-	} else if pbft.msgLog.HaveLog(CommitMsg, commit.ID) {
+	} else if pbft.msgLog.HaveLog(CommitMsg, commit.ID, commit.Height) {
 		return false, errors.New("already receive this commit message")
-	} else if !pbft.msgLog.HaveBlock(commit.BlockHash) {
+	} else if !pbft.msgLog.HaveBlock(commit.Height) {
 		// check cache block hash
 		return false, errors.New("unsigned block")
 	} else {
 		// add message to cache
 		pbft.msgLog.AddMessage(CommitMsg, *commit)
-		pbft.log.Println("Verify commit message successfully, commit count: ", pbft.msgLog.Count(CommitMsg))
+		pbft.log.Println("Verify commit message successfully, commit count: ", pbft.msgLog.Count(CommitMsg, commit.Height))
 
 		// check already receive commit message
-		if pbft.msgLog.Count(CommitMsg) == 2*pbft.maxFaultNode+1 {
+		if pbft.msgLog.Count(CommitMsg, commit.Height) == 2*pbft.maxFaultNode+1 {
 			// had received enough commit message
 			pbft.log.Println("Already receive enough commit message")
 			// add block to block pool
 			pbft.log.Println("Add block to chain")
-			block := pbft.msgLog.GetBlock(commit.BlockHash)
+			block := pbft.msgLog.GetBlock(commit.Height)
 			pbft.blockPool.AddBlock(block)
 
 			return true, nil
@@ -311,13 +314,13 @@ func (pbft *PBFT) handleViewChange(viewChange *ViewChangeMessage) (bool, error) 
 		return false, errors.New("invalid view change")
 	} else if !mycrypto.Verify(pubKey, viewChange.BlockHash, viewChange.Sign) {
 		return false, errors.New("verify digest fail")
-	} else if pbft.msgLog.HaveLog(ViewChangeMsg, viewChange.ID) {
+	} else if pbft.msgLog.HaveLog(ViewChangeMsg, viewChange.ID, viewChange.Height) {
 		return false, errors.New("already receive this view change message")
 	} else {
 		// add message to cache
 		pbft.msgLog.AddMessage(ViewChangeMsg, *viewChange)
 		pbft.log.Println("Verify viewChange message successfully")
-		pbft.log.Printf("to view: %d, count: %d", viewChange.ToView, pbft.msgLog.ViewChangeCount(viewChange.ToView))
+		pbft.log.Printf("to view: %d, count: %d", viewChange.ToView, pbft.msgLog.Count(ViewChangeMsg, viewChange.Height))
 
 		// not in view change state, pass
 		if pbft.GetState() != ViewChangeState {
@@ -325,7 +328,7 @@ func (pbft *PBFT) handleViewChange(viewChange *ViewChangeMessage) (bool, error) 
 		}
 
 		// check already receive view change message
-		if pbft.msgLog.ViewChangeCount(viewChange.ToView) == 2*pbft.maxFaultNode+1 {
+		if pbft.msgLog.Count(ViewChangeMsg, viewChange.Height) == 2*pbft.maxFaultNode+1 {
 			// had received enough view change message
 			pbft.log.Println("Already receive enough view change message")
 			// change view

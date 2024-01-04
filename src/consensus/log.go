@@ -2,36 +2,50 @@ package consensus
 
 import (
 	"BlockChain/src/blockchain"
-	"encoding/hex"
 	"sync"
 )
 
 // MsgLog represents a cache for consensus messages
-// consensus msg map: node id -> receive message
-// block map: block hash -> block
-// view change: [to view](node id -> receive message)
 type MsgLog struct {
-	prepares map[string]*PrepareMessage      // prepare message cache
-	signs    map[string]*SignMessage         // sign message cache
-	commits  map[string]*CommitMessage       // commit message cache
-	views    []map[string]*ViewChangeMessage // view change message cache
-	block    map[string]*blockchain.Block    // block cache
-	lock     sync.Mutex
+	nodeNum uint64      // pBFT node number
+	logs    []*LogEntry // cache of each checkpoint receive message
+	lock    sync.Mutex
 }
 
-// NewMsgLog creates and initializes a new MsgLog instance.
-func NewMsgLog() *MsgLog {
-	log := &MsgLog{
+// LogEntry represents a log entry for a checkpoint
+// map: node ID -> message
+type LogEntry struct {
+	prepares map[string]*PrepareMessage    // prepare message cache
+	signs    map[string]*SignMessage       // sign message cache
+	commits  map[string]*CommitMessage     // commit message cache
+	views    map[string]*ViewChangeMessage // view change message cache
+	block    *blockchain.Block             // block cache
+}
+
+func initEntry() *LogEntry {
+	e := &LogEntry{
 		prepares: make(map[string]*PrepareMessage),
-		commits:  make(map[string]*CommitMessage),
 		signs:    make(map[string]*SignMessage),
-		views:    make([]map[string]*ViewChangeMessage, 256),
-		block:    make(map[string]*blockchain.Block),
+		commits:  make(map[string]*CommitMessage),
+		views:    make(map[string]*ViewChangeMessage),
+		block:    nil,
+	}
+	return e
+}
+
+// NewMsgLog creates and initializes a new MsgLog instance
+func NewMsgLog(num uint64) *MsgLog {
+	log := &MsgLog{
+		nodeNum: num,
+		logs:    make([]*LogEntry, num),
+	}
+	for i := 0; i < int(num); i++ {
+		log.logs[i] = initEntry()
 	}
 	return log
 }
 
-// AddMessage adds a message of a specific type to the MsgLog cache.
+// AddMessage adds a message of a specific type to the MsgLog cache
 func (l *MsgLog) AddMessage(msgType PBFTMsgType, data interface{}) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
@@ -39,42 +53,40 @@ func (l *MsgLog) AddMessage(msgType PBFTMsgType, data interface{}) {
 	switch msgType {
 	case PrepareMsg:
 		if prepare, ok := data.(PrepareMessage); ok {
-			id := prepare.ID
-			l.prepares[id] = &prepare
+			l.logs[prepare.Height%l.nodeNum].prepares[prepare.ID] = &prepare
 		}
 	case CommitMsg:
 		if commit, ok := data.(CommitMessage); ok {
-			id := commit.ID
-			l.commits[id] = &commit
+			l.logs[commit.Height%l.nodeNum].commits[commit.ID] = &commit
 		}
 	case SignMsg:
 		if sign, ok := data.(SignMessage); ok {
-			id := sign.ID
-			l.signs[id] = &sign
+			l.logs[sign.Height%l.nodeNum].signs[sign.ID] = &sign
 		}
 	case ViewChangeMsg:
 		if view, ok := data.(ViewChangeMessage); ok {
-			id := view.ID
-			to := view.ToView
-			l.views[to][id] = &view
+			l.logs[view.Height%l.nodeNum].views[view.ID] = &view
 		}
 	}
 }
 
-// HaveLog checks if a specific type of message with a given ID exists in the MsgLog cache.
-func (l *MsgLog) HaveLog(msgType PBFTMsgType, id string) bool {
+// HaveLog checks if a specific type of message with a given ID exists in the MsgLog cache
+func (l *MsgLog) HaveLog(msgType PBFTMsgType, id string, height uint64) bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	switch msgType {
 	case PrepareMsg:
-		_, ok := l.prepares[id]
+		_, ok := l.logs[height%l.nodeNum].prepares[id]
 		return ok
 	case CommitMsg:
-		_, ok := l.commits[id]
+		_, ok := l.logs[height%l.nodeNum].commits[id]
 		return ok
 	case SignMsg:
-		_, ok := l.signs[id]
+		_, ok := l.logs[height%l.nodeNum].signs[id]
+		return ok
+	case ViewChangeMsg:
+		_, ok := l.logs[height%l.nodeNum].views[id]
 		return ok
 	}
 	return false
@@ -84,89 +96,53 @@ func (l *MsgLog) HaveLog(msgType PBFTMsgType, id string) bool {
 func (l *MsgLog) CacheBlock(b *blockchain.Block) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	hash := hex.EncodeToString(b.Header.Hash)
-	l.block[hash] = b
+	height := b.Header.Height
+	l.logs[height%l.nodeNum].block = b
 }
 
 // GetBlock return log cache block
-func (l *MsgLog) GetBlock(h []byte) *blockchain.Block {
+func (l *MsgLog) GetBlock(height uint64) *blockchain.Block {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	hash := hex.EncodeToString(h)
-	return l.block[hash]
+	return l.logs[height%l.nodeNum].block
 }
 
 // HaveBlock check if a block exists in the MsgLog cache
-func (l *MsgLog) HaveBlock(h []byte) bool {
+func (l *MsgLog) HaveBlock(height uint64) bool {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	hash := hex.EncodeToString(h)
-	_, exists := l.block[hash]
-	return exists
-}
-
-// GetPrepareLog retrieves a PrepareMessage from the MsgLog cache using its ID.
-func (l *MsgLog) GetPrepareLog(id string) *PrepareMessage {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-
-	return l.prepares[id]
-}
-
-// GetCommitLog retrieves a CommitMessage from the MsgLog cache using its ID.
-func (l *MsgLog) GetCommitLog(id string) *CommitMessage {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-
-	return l.commits[id]
+	return l.logs[height%l.nodeNum].block != nil
 }
 
 // GetSignLog retrieves a SignMessage from the MsgLog cache using its ID.
-func (l *MsgLog) GetSignLog(id string) *SignMessage {
+func (l *MsgLog) GetSignLog(id string, height uint64) *SignMessage {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-
-	return l.signs[id]
+	return l.logs[height%l.nodeNum].signs[id]
 }
 
-// GetViewChangeLog retrieves a ViewChangeMessage from the MsgLog cache using its ID.
-func (l *MsgLog) GetViewChangeLog(to uint64, id string) *ViewChangeMessage {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-
-	return l.views[to][id]
-}
-
-// Count returns the count of messages of a specific type in the MsgLog cache.
-func (l *MsgLog) Count(msgType PBFTMsgType) uint64 {
+// Count returns the count of messages of a specific type in the MsgLog cache
+func (l *MsgLog) Count(msgType PBFTMsgType, height uint64) uint64 {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	switch msgType {
 	case PrepareMsg:
-		return uint64(len(l.prepares))
+		return uint64(len(l.logs[height%l.nodeNum].prepares))
 	case CommitMsg:
-		return uint64(len(l.commits))
+		return uint64(len(l.logs[height%l.nodeNum].commits))
 	case SignMsg:
-		return uint64(len(l.signs))
+		return uint64(len(l.logs[height%l.nodeNum].signs))
+	case ViewChangeMsg:
+		return uint64(len(l.logs[height%l.nodeNum].views))
 	}
 	return 0
-}
-
-// ViewChangeCount returns the count of ViewChangeMessage in the MsgLog cache.
-func (l *MsgLog) ViewChangeCount(to uint64) uint64 {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-
-	return uint64(len(l.views[to]))
 }
 
 func (l *MsgLog) ClearLog() {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	l.prepares = make(map[string]*PrepareMessage)
-	l.signs = make(map[string]*SignMessage)
-	l.commits = make(map[string]*CommitMessage)
-	l.views = make([]map[string]*ViewChangeMessage, 256)
-	l.block = make(map[string]*blockchain.Block)
+	for i := 0; i < int(l.nodeNum); i++ {
+		l.logs[i] = initEntry()
+	}
 }

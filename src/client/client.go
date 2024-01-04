@@ -49,6 +49,7 @@ func CreateClient(config *Config, c *blockchain.Chain, w *blockchain.Wallet) (*C
 		l.Panic("Initialize pBFT consensus fail")
 		return nil, err
 	}
+
 	client := &Client{
 		isConsensus: config.PBFTCfg.IsConsensusNode,
 		chain:       c,
@@ -83,10 +84,9 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 	c.log.Println("Run Block Pool")
 	go c.blockPool.Run()
 
-	var cmd string
 	defer wg.Done() // Mark the WaitGroup as done when this function exits
 	for {
-		fmt.Println("\nPlease input your command:")
+		fmt.Print("> ")
 		var input string
 		scanner := bufio.NewScanner(os.Stdin)
 		if scanner.Scan() {
@@ -94,43 +94,62 @@ func (c *Client) Run(wg *sync.WaitGroup, exitChan chan struct{}) error {
 		}
 
 		// Split the input string into command and arguments
-		parts := strings.Fields(input)
-		if len(parts) == 0 {
+		cmd := strings.Fields(input)
+		if len(cmd) == 0 {
 			c.Usages() // Display usage instructions if no command is entered
 		} else {
-			cmd = parts[0]
-			switch cmd {
-			case "exit", "q":
-				close(exitChan) // Close the exit channel to signal shutdown
-				return nil      // Exit the Run function
-			case "help", "h":
-				c.Usages() // Display usage instructions
-			case "transaction", "tx":
-				// Process transaction command
-				if len(parts) == 3 {
-					amount, err := strconv.Atoi(parts[1])
-					if err != nil {
-						fmt.Println("wrong amount")
-					} else if toAddress := []byte(parts[2]); err != nil {
-						fmt.Println("wrong address")
-					} else {
-						c.CreateTransaction(amount, toAddress) // Create a transaction
-					}
-				} else {
-					fmt.Println("Please input address and amount")
-				}
-			case "status", "s":
-				c.ShowStatus() // Display the status of the client
-			default:
-				fmt.Println("Unknown command, use \"help\" or \"h\" for usage")
+			if !c.handleCmd(cmd) {
+				close(exitChan)
+				return nil
 			}
 		}
 	}
 }
 
-// CreateTransaction creates a transaction with specified amount and recipient address,
+// handleCmd handle user input command
+func (c *Client) handleCmd(cmd []string) bool {
+	switch cmd[0] {
+	case "q":
+		return false // Exit the Run function
+	case "h":
+		c.Usages() // Display usage instructions
+	case "tx":
+		// Process transaction command
+		if len(cmd) == 3 {
+			amount, err := strconv.Atoi(cmd[1])
+			if err != nil {
+				fmt.Println("wrong amount")
+			} else if toAddress := []byte(cmd[2]); err != nil {
+				fmt.Println("wrong address")
+			} else {
+				c.createTransaction(amount, toAddress) // Create a transaction
+			}
+		} else {
+			fmt.Println("Please input address and amount")
+		}
+	case "s":
+		c.showStatus() // Display the status
+	case "b":
+		if len(cmd) == 2 {
+			block := c.chain.FindBlock(cmd[1])
+			if block == nil {
+				fmt.Println("Block not found")
+			} else {
+				block.Show()
+			}
+
+		} else {
+			fmt.Println("Please input block id")
+		}
+	default:
+		fmt.Println("Unknown command, use \"help\" or \"h\" for usage")
+	}
+	return true
+}
+
+// createTransaction creates a transaction with specified amount and recipient address,
 // adds it to the local transaction pool, and broadcasts it to connected peers.
-func (c *Client) CreateTransaction(amount int, to []byte) {
+func (c *Client) createTransaction(amount int, to []byte) {
 	// Create a new transaction using the client's wallet and blockchain
 	tx, err := blockchain.NewTransaction(c.wallet, c.chain, to, amount)
 	if err != nil {
@@ -168,25 +187,24 @@ func (c *Client) CreateTransaction(amount int, to []byte) {
 	c.network.Broadcast(msg)
 }
 
-// GetBalance get balance of the client
-func (c *Client) GetBalance() int {
+// getBalance get balance of the client
+func (c *Client) getBalance() int {
 	return blockchain.GetBalanceFromSet(c.chain.DataBase, c.wallet.GetAddress())
 }
 
-// ShowStatus displays the status of the blockchain, wallet, network, and consensus components.
-func (c *Client) ShowStatus() {
+// showStatus displays the status of the blockchain, wallet, network, and consensus components.
+func (c *Client) showStatus() {
 	// Display wallet information
 	fmt.Println("Address: ", string(c.wallet.GetAddress()))
-	fmt.Println("Balance: ", c.GetBalance())
+	fmt.Println("Balance: ", c.getBalance())
 
 	// Display blockchain status
 	fmt.Println("\nBlockChain Status:")
 	fmt.Println("Height: ", c.chain.GetHeight())
-	fmt.Println("Tip: ", c.chain.GetTip())
-
-	// Display network status
-	fmt.Println("\nNetwork Status: ")
-	fmt.Println("Host ID: ", c.network.Host.ID().String())
+	tip := c.chain.GetTip()
+	fmt.Println("Tip: ", tip)
+	headBlock := c.chain.FindBlock(tip)
+	headBlock.Show()
 
 	// Display pool status (transaction and block pools)
 	fmt.Println("\nPoolStatus: ")
@@ -201,12 +219,18 @@ func (c *Client) ShowStatus() {
 		fmt.Println("Is Primary Node: false")
 	}
 	fmt.Println("View: ", c.consensus.GetView())
+
+	// Display network status
+	fmt.Println("\nNetwork Status: ")
+	fmt.Println("Host ID: ", c.network.Host.ID().String())
 }
 
 // Usages displays usage instructions for the client's command-line interface.
 func (c *Client) Usages() {
 	fmt.Println("Usages:")
-	fmt.Println("exit, q: Exit the blockchain client")
-	fmt.Println("balance, b: Check balance")
-	// Add more usage instructions as needed for other commands
+	fmt.Println("h:  Show usage")
+	fmt.Println("q:  Exit the blockchain client")
+	fmt.Println("tx: tx <amount> <address>   create new transaction")
+	fmt.Println("s:  Show current status of block chain")
+	fmt.Println("b:  Search block by hash or height")
 }

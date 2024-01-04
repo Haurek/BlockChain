@@ -223,17 +223,18 @@ func (bp *BlockPool) BlockSyncRoutine() {
 
 // AddBlock add block to pool
 func (bp *BlockPool) AddBlock(block *blockchain.Block) {
-	bp.lock.Lock()
-	defer bp.lock.Unlock()
-
 	id := hex.EncodeToString(block.Header.Hash)
+	bp.lock.Lock()
 	if _, exists := bp.pool[id]; !exists {
 		// add block to pool
 		bp.pool[id] = block
 		// check pool status
 		if len(bp.pool) >= bp.full {
+			bp.lock.Unlock()
 			// add block to chain
 			bp.Reindex()
+		} else {
+			bp.lock.Unlock()
 		}
 	}
 }

@@ -54,7 +54,7 @@ func NewPBFT(num, index uint64, f uint64, v uint64, tp *pool.TxPool, bp *pool.Bl
 
 	pbft := &PBFT{
 		engine:       NewEngine(),
-		msgLog:       NewMsgLog(),
+		msgLog:       NewMsgLog(num),
 		net:          net,
 		chain:        chain,
 		publicKey:    wallet.GetPublicKey(),
@@ -109,7 +109,6 @@ func (pbft *PBFT) Run() {
 		select {
 		// receive message
 		case msg := <-pbft.consensusMsg:
-			pbft.log.Println("Receive a consensus message")
 			if !pbft.isStart {
 				continue
 			}
@@ -165,6 +164,7 @@ func (pbft *PBFT) Run() {
 				// not primary node
 				// start viewChange timer, wait primary node prepare message
 				pbft.lock.Unlock()
+				pbft.log.Println("Start primary node timer")
 				pbft.viewChangeTimer.Reset(ViewTimeout * time.Second)
 				continue
 			}

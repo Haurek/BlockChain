@@ -94,26 +94,37 @@ func NewTransaction(wallet *Wallet, chain *Chain, to []byte, amount int) (*Trans
 	return Tx, nil
 }
 
-// VerifyTransaction verifies each input of a transaction before adding it to a block
-func VerifyTransaction(chain *Chain, Tx *Transaction) bool {
-	// Check if it's a coinbase transaction
-	if Tx.IsCoinBase() == true {
-		return true
-	}
-
-	for _, input := range Tx.Inputs {
-		// Find the previous transaction for each input
-		preTx, err := chain.FindTransaction(input.TxID)
-		if err != nil {
-			fmt.Println("fail to find previous Tx")
-			return false
+// VerifyTransactions Verify Txs Signature and check double spent
+func VerifyTransactions(chain *Chain, Txs []*Transaction) bool {
+	usedOutputs := make(map[string]struct{})
+	for _, Tx := range Txs {
+		// Check if it's a coinbase transaction
+		if Tx.IsCoinBase() == true {
+			continue
 		}
 
-		// Verify the signature for each input
-		signature := input.Signature
-		message := HashTransaction(preTx)
-		if mycrypto.Verify(mycrypto.Bytes2PublicKey(input.PublicKeyBytes), message, signature) == false {
-			return false
+		for _, input := range Tx.Inputs {
+			// Find the previous transaction for each input
+			preTx, err := chain.FindTransaction(input.TxID)
+			if err != nil {
+				chain.log.Println("fail to find previous Tx")
+				return false
+			}
+			// check double spent
+			outputIdentifier := fmt.Sprintf("%s:%d", input.TxID, input.Index)
+			if _, exists := usedOutputs[outputIdentifier]; exists {
+				chain.log.Println("Double spent")
+				return false
+			}
+			usedOutputs[outputIdentifier] = struct{}{}
+
+			// Verify the signature for each input
+			signature := input.Signature
+			message := HashTransaction(preTx)
+			if mycrypto.Verify(mycrypto.Bytes2PublicKey(input.PublicKeyBytes), message, signature) == false {
+				chain.log.Println("Signature verify error")
+				return false
+			}
 		}
 	}
 	return true
